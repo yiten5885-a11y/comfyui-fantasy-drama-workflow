@@ -1,0 +1,73 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>玄幻短剧 · 本地制作队列</title>
+<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0b1418;color:#e8efec;font:15px system-ui}main{max-width:1100px;margin:42px auto;padding:0 24px}h1{font-size:30px;margin:8px 0 12px}p{color:#a4b7b4;line-height:1.7}header{border-bottom:1px solid #29423f;padding-bottom:24px}.tag{color:#8cd9bd;letter-spacing:2px;font-size:12px}.card{background:#122126;border:1px solid #29423f;border-radius:15px;padding:24px;margin:22px 0}button,select,input{font:inherit}button,select{padding:11px 16px;border:1px solid #42645c;border-radius:8px;background:#19382f;color:#edf9f3;cursor:pointer}button:disabled{opacity:.5;cursor:wait}select{background:#142c30;max-width:100%}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.muted{color:#9db2ae;font-size:13px}.status{color:#8cd9bd}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0b181b;padding:16px;border-radius:8px;font-size:13px}a{color:#91d9c5}table{border-collapse:collapse;width:100%;margin-top:12px}th,td{text-align:left;border-bottom:1px solid #29423f;padding:10px 7px;font-size:13px}video{max-width:320px;max-height:570px;width:100%;border-radius:10px}#message{white-space:pre-wrap;color:#e9c087}.phase{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.phase span{padding:8px 12px;background:#193036;border-radius:20px;font-size:13px}</style>
+<main><header><div class="tag">LOCAL · COMFYUI · 3D国风玄幻</div><p><a href="/" target="_blank">打开 ComfyUI 工作流</a></p><h1>分镜进来，3D短剧出去</h1><p>默认按3D国漫电影质感，逐镜头生成关键帧和 Wan 动态视频，完成配音、字幕与混音。任务保留提交记录，可恢复执行；达到重试上限时保留现场，等待处理。</p><div class="phase"><span>① 分镜校验</span><span>② 关键帧与复检</span><span>③ 动态镜头</span><span>④ 配音字幕</span><span>⑤ MP4 验收</span></div><p id="gate" role="status">构建模式：模型未启动</p><p id="models" class="muted" role="status">正在读取本地模型准备进度…</p></header>
+<section class="card"><h2>提交制作</h2><p class="muted">选择已有项目，或上传 storyboard.json；CSV 项目请一起上传 characters.json。description 描述首帧，video_prompt 描述连续动作。复杂动作可在分镜中填 end_frame 文件名并一并上传同名尾帧图，视频模型会同时约束首尾姿势。</p><div class="row"><select id="project" aria-label="分镜项目"></select><select id="preset" aria-label="制作预设"><option value="preview">动态预览 · 384×672 / 17帧 / 12步</option><option value="production" selected>3D高清 · 原生736×1312 / 73帧 / 1080竖屏交付</option></select><button id="start">开始制作</button></div><p><input id="files" type="file" accept=".json,.csv,.png,.jpg,.jpeg,.webp" multiple aria-label="上传分镜和尾帧图片"> <button id="upload">导入分镜</button></p><div id="message" role="status"></div></section><p id="jobnav" class="muted"></p><section id="jobs"></section><p class="muted">完整档原生736×1312生成，最终1080×1920输出包含放大和居中裁切；放大不会新增原生细节。预览用于验证动态链路。成片按分镜时长和配音长度调整播放速度；尚不包含口型同步。视觉模型检查和技术检查都不能保证每次生成符合导演要求。</p></main>
+<script>
+let inferenceAllowed=false, refreshing=false;
+const params=new URLSearchParams(location.search);
+let viewedJob=params.get('job')||'';
+const $=id=>document.getElementById(id);
+const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const labels={queued:'排队中',running:'运行中',complete:'已完成',failed:'失败',interrupted:'已中断',stopped:'已停止',needs_attention:'需要处理',submitting:'提交中',unknown:'回执待核对',preflight:'校验',image:'关键帧',video:'动态镜头',image_review:'关键帧视觉复检',video_review:'动态视频视觉复检',voice:'逐句配音',subtitles:'时间轴与字幕',audio:'混音',final_review:'成片质检',compose:'竖屏合成',publish:'复制交付成片'};
+async function api(url,data){
+  const response=await fetch(url,data===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  const result=await response.json();
+  if(!response.ok)throw Error(result.error||response.status);
+  return result;
+}
+function selectProjectUrl(){return '/drama/production?project='+encodeURIComponent($('project').value)}
+async function projects(selected){
+  const data=await api('/api/drama/projects');
+  $('project').innerHTML=data.projects.map(name=>`<option>${esc(name)}</option>`).join('');
+  const choice=selected||data.default_project;
+  if(data.projects.includes(choice))$('project').value=choice;
+}
+function renderJob(job){
+  const id=esc(job.job_id);
+  const rows=Object.entries(job.shots||{}).map(([name,shot])=>`<tr><td>${esc(name)}</td>${['image','video'].map(kind=>`<td>${esc(labels[shot[kind]?.status]||shot[kind]?.status||'待处理')} · ${shot[kind]?.attempts||0} 次${shot[kind]?.vision?'<br>视觉：'+(shot[kind].vision.pass===true?'通过':shot[kind].vision.pass===false?'未通过':'未检查'):''}</td>`).join('')}</tr>`).join('');
+  const resume=['needs_attention','stopped'].includes(job.status)?`<button data-resume="${id}">恢复制作 / 重试失败步骤</button>`:'';
+  const stop=['queued','running'].includes(job.status)?`<button data-stop="${id}">停止制作</button>`:'';
+  const result=job.status==='complete'?`<p><a href="/view?filename=episode.mp4&subfolder=drama_jobs/${id}&type=output" download>下载成片 MP4</a></p><video controls src="/view?filename=episode.mp4&subfolder=drama_jobs/${id}&type=output"></video>${job.delivery_dir?'<p>桌面交付目录：</p><pre>'+esc(job.delivery_dir)+'</pre>':''}<pre>${esc(JSON.stringify(job.qa,null,2))}</pre>`:'';
+  return `<article class="card"><div class="tag">${id}</div><h2>${esc(job.project)} <span class="status">${esc(labels[job.status]||job.status)}</span></h2><p>${esc(labels[job.phase]||job.phase)} ${esc(job.current_shot||'')} · ${esc(job.updated_at||job.created_at)}</p><table><tr><th>镜头</th><th>关键帧</th><th>动态视频</th></tr>${rows}</table>${job.error?'<pre>'+esc(job.error)+'</pre>':''}<div class="row">${resume}${stop}</div>${result}</article>`;
+}
+async function refresh(){
+  if(refreshing)return;
+  refreshing=true;
+  try{
+    const [build,models,data]=await Promise.all([
+      api('/api/drama/build'),api('/api/drama/models'),
+      viewedJob?api('/api/drama/jobs/'+encodeURIComponent(viewedJob)):api('/api/drama/jobs')
+    ]);
+    inferenceAllowed=build.inference_allowed;
+    $('gate').textContent=(inferenceAllowed?'允许制作：':'自动推理停用 · ')+build.reason;
+    $('start').disabled=!inferenceAllowed;
+    $('models').textContent=models.status==='verified'?'本地图生视频模型：下载和 SHA-256 校验已通过':models.total?'本地模型下载：'+(models.downloaded/1e9).toFixed(2)+' / '+(models.total/1e9).toFixed(2)+' GB · '+(models.downloaded/models.total*100).toFixed(1)+'%':'本地模型状态：请先完成模型准备';
+    if(viewedJob&&Array.from($('project').options).some(option=>option.value===data.project))$('project').value=data.project;
+    const jobs=viewedJob?[data]:data.jobs.filter(job=>job.project===$('project').value);
+    $('jobnav').innerHTML=viewedJob?`正在查看指定任务。<a href="${esc(selectProjectUrl())}">查看该项目全部任务</a>`:'当前项目的任务记录';
+    $('jobs').innerHTML=jobs.map(renderJob).join('')||'<p>这个项目还没有制作任务。</p>';
+    document.querySelectorAll('[data-resume]').forEach(button=>{
+      button.disabled=!inferenceAllowed;
+      button.onclick=async()=>{button.disabled=true;try{await api('/api/drama/jobs/'+encodeURIComponent(button.dataset.resume)+'/resume',{});await refresh()}catch(error){$('message').textContent=error.message}finally{button.disabled=!inferenceAllowed}};
+    });
+    document.querySelectorAll('[data-stop]').forEach(button=>{
+      button.onclick=async()=>{button.disabled=true;try{await api('/api/drama/jobs/'+encodeURIComponent(button.dataset.stop)+'/stop',{});await refresh()}catch(error){$('message').textContent=error.message}finally{button.disabled=false}};
+    });
+  }catch(error){$('message').textContent=error.message}
+  finally{refreshing=false}
+}
+$('project').onchange=()=>{viewedJob='';history.replaceState(null,'',selectProjectUrl());refresh()};
+$('start').onclick=async()=>{
+  const button=$('start');button.disabled=true;
+  try{const data=await api('/api/drama/jobs',{project:$('project').value,preset:$('preset').value});viewedJob=data.job_id;history.replaceState(null,'','/drama/production?job='+encodeURIComponent(viewedJob));$('message').textContent='任务 '+data.job_id+' 已记录。';await refresh()}
+  catch(error){$('message').textContent=error.message}
+  finally{button.disabled=!inferenceAllowed}
+};
+$('upload').onclick=async()=>{
+  const form=new FormData();for(const file of $('files').files)form.append('file',file);
+  try{const response=await fetch('/api/drama/upload',{method:'POST',body:form}),data=await response.json();if(!response.ok)throw Error(data.error);await projects(data.project);viewedJob='';history.replaceState(null,'',selectProjectUrl());$('message').textContent='分镜已导入，请选择预设并开始制作。';await refresh()}
+  catch(error){$('message').textContent=error.message}
+};
+(async()=>{try{await projects(params.get('project'));await refresh()}catch(error){$('message').textContent=error.message}})();
+setInterval(refresh,6000);
+</script></html>

@@ -1,0 +1,5 @@
+{
+  "build_complete": true,
+  "inference_enabled": false,
+  "reason": "模型推理默认关闭。请先在目标主机核对工作流、模型可用性与内存预算，再由操作者显式启用。"
+}

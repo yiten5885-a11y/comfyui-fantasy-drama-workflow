@@ -1,0 +1,38 @@
+{
+  "branch": "wan22_motion_draft_then_animate2_identity_transfer",
+  "status": "production_integrated_runtime_visual_qa_pending",
+  "driving_video_source": "automatically generated Wan 2.2 motion draft from the submitted storyboard",
+  "requires_manual_driving_video": false,
+  "sequential_model_release_required": true,
+  "trim_reference_latent": true,
+  "trim_continuation_overlap": true,
+  "preserves_storyboard_end_frame": true,
+  "production": {
+    "width": 480,
+    "height": 832,
+    "frames": 73,
+    "fps": 24,
+    "steps": 6,
+    "cfg": 1.0,
+    "sampler": "lcm",
+    "shift": 5.0
+  },
+  "preview": {
+    "width": 384,
+    "height": 672,
+    "frames": 17,
+    "fps": 8,
+    "steps": 6,
+    "cfg": 1.0,
+    "sampler": "lcm",
+    "shift": 5.0
+  },
+  "weights": {
+    "model": "wan_animate_2_int8_convrot.safetensors",
+    "text_encoder": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+    "clip_vision": "clip_vision_h.safetensors",
+    "lora": "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
+    "vae": "Wan2_1_VAE_bf16.safetensors"
+  },
+  "full_end_to_end_verified": false
+}

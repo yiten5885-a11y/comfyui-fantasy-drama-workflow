@@ -1,0 +1,22 @@
+# ComfyUI outputs and model files
+output/
+input/
+delivery/
+models/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.gguf
+*.mp4
+*.mov
+*.wav
+*.png
+*.jpg
+*.jpeg
+*.webp
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store

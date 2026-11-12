@@ -1,0 +1,197 @@
+{
+  "version": 2,
+  "_readme": "一键精品短剧的全部预置参数，正常情况下一项都不用改；改完下次运行立即生效。cinema 段供精品渲染器 render_cinema.py 使用，video 段是基础版 render_drama.py 的回退参数。",
+  "renderer": "cinema",
+  "llm": {
+    "url": "http://127.0.0.1:18088/v1/chat/completions",
+    "model": "YOUR_LOCAL_VISION_MODEL",
+    "shots": 6,
+    "temperature": 0.7,
+    "timeout_sec": 600,
+    "style_suffix": "同一人物在所有镜头中保持完全一致的五官、发型、服装与配色，电影级布光，层次分明的前景与背景，画面干净无文字"
+  },
+  "comfy": {
+    "host": "http://127.0.0.1:8188",
+    "input_root": "./input/drama",
+    "output_root": "./output",
+    "vae": "ae.safetensors",
+    "subfolder": "drama",
+    "shot_timeout_sec": 1800
+  },
+  "image": {
+    "width": 736,
+    "height": 1312,
+    "steps": 8,
+    "cfg": 1.0,
+    "sampler": "res_multistep",
+    "scheduler": "simple",
+    "shift": 3.0,
+    "clip_type": "lumina2",
+    "style": "高品质3D国风玄幻动画电影，三维角色建模与立体五官，动画电影皮肤质感与细腻次表面散射，PBR金属和织物材质，精细发丝，电影级体积光与青金色轮廓光，能量粒子，清晰锐利的材质细节，高动态范围，竖屏电影构图，主体完整入镜并留足边缘空间"
+  },
+  "characters": {
+    "mode": "llm_anchors",
+    "portraits": false,
+    "portrait_width": 768,
+    "portrait_height": 768,
+    "portrait_suffix": "3D国漫角色设定，立体面部与PBR材质，半身正面，中性背景，柔和均匀布光"
+  },
+  "cinema": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 24,
+    "crf": 17,
+    "preset": "medium",
+    "intro_sec": 0.5,
+    "outro_sec": 0.35,
+    "outro_text": "完",
+    "transition_frames": 4,
+    "min_shot_sec": 3.0,
+    "voice_tail_sec": 0.5,
+    "zoom": 0.11,
+    "pan": 0.075,
+    "handheld_px": 2.4,
+    "contrast": 1.06,
+    "saturation": 1.08,
+    "vignette": 0.3,
+    "grain": 0.0,
+    "letterbox": 0,
+    "subtitle_fade_sec": 0.28,
+    "sfx_enabled": true,
+    "sfx_gain": 0.26,
+    "cover": true,
+    "voice_map": {
+      "_default": "Tingting (中文（中国大陆）)",
+      "_male": "Reed (中文（中国大陆）)",
+      "_elder": "Grandpa (中文（中国大陆）)"
+    }
+  },
+  "video": {
+    "fps": 24,
+    "width": 1080,
+    "height": 1920,
+    "crf": 20,
+    "preset": "veryfast",
+    "zoom": 0.08,
+    "shot_duration_sec": 3.0,
+    "intro_sec": 2.0,
+    "intro_enabled": true
+  },
+  "subtitle": {
+    "burn_in": true,
+    "font": "/System/Library/Fonts/STHeiti Medium.ttc",
+    "font_index": 0,
+    "size": 56,
+    "bottom_margin": 165,
+    "max_chars_per_line": 15,
+    "line_gap": 18,
+    "color": [
+      255,
+      255,
+      255
+    ],
+    "stroke_color": [
+      0,
+      0,
+      0
+    ],
+    "stroke_width": 4,
+    "box_color": [
+      0,
+      0,
+      0
+    ],
+    "box_alpha": 150,
+    "box_padding": 22
+  },
+  "voice": {
+    "enabled": true,
+    "engine": "say",
+    "name": "Tingting",
+    "rate": 170,
+    "gain": 1.0,
+    "lead_in_sec": 0.2,
+    "timeout_sec": 60,
+    "per_character": {}
+  },
+  "music": {
+    "enabled": true,
+    "source": "builtin",
+    "file": "",
+    "gain": 0.1,
+    "duck_under_voice": 0.42,
+    "fade_sec": 1.8,
+    "builtin": {
+      "style": "ambient_pad_bass_arp",
+      "bar_sec": 4.0
+    }
+  },
+  "audio": {
+    "sample_rate": 44100,
+    "codec": "aac",
+    "bit_rate": 160000,
+    "normalize_ceiling": 0.92
+  },
+  "delivery": {
+    "dir": "./delivery",
+    "copy_keyframes": true,
+    "copy_portraits": true,
+    "copy_voice": true,
+    "open_when_done": true
+  },
+  "dynamic": {
+    "model": "wan2.2_ti2v_5B_fp16.safetensors",
+    "text_encoder": "umt5_xxl_fp16.safetensors",
+    "vae": "wan2.2_vae.safetensors",
+    "width": 736,
+    "height": 1312,
+    "frames": 73,
+    "steps": 20,
+    "cfg": 5.0,
+    "fps": 24,
+    "negative": "二维平面插画，赛璐璐，真人实拍，静止画面，严重肢体畸形，多余肢体，人物突变，服装变化，闪烁，字幕，水印，模糊，低质量",
+    "sampler": "euler"
+  },
+  "animation": {
+    "enabled": true,
+    "preset": "production",
+    "model": "wan_animate_2_int8_convrot.safetensors",
+    "text_encoder": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+    "clip_vision": "clip_vision_h.safetensors",
+    "lora": "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
+    "vae": "Wan2_1_VAE_bf16.safetensors",
+    "presets": {
+      "preview": {
+        "width": 384,
+        "height": 672,
+        "frames": 17,
+        "fps": 8,
+        "steps": 6,
+        "cfg": 1.0,
+        "sampler": "lcm",
+        "shift": 5.0
+      },
+      "production": {
+        "width": 480,
+        "height": 832,
+        "frames": 73,
+        "fps": 24,
+        "steps": 6,
+        "cfg": 1.0,
+        "sampler": "lcm",
+        "shift": 5.0
+      }
+    }
+  },
+  "quality": {
+    "max_retries": 2,
+    "stage_timeout_sec": 10800,
+    "vision": {
+      "enabled": true,
+      "url": "http://127.0.0.1:18088/v1/chat/completions",
+      "model": "YOUR_LOCAL_VISION_MODEL",
+      "timeout_sec": 600
+    }
+  },
+  "default_project": "example-fantasy-story"
+}

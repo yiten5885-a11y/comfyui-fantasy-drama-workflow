@@ -1,0 +1,680 @@
+{
+  "3": {
+    "inputs": {
+      "seed": [
+        "50",
+        4
+      ],
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "res_multistep",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "11",
+        0
+      ],
+      "positive": [
+        "27",
+        0
+      ],
+      "negative": [
+        "33",
+        0
+      ],
+      "latent_image": [
+        "13",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "03 Z-Image 关键帧采样",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.64"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "29",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.64"
+    }
+  },
+  "11": {
+    "inputs": {
+      "shift": 3,
+      "sampling": "flow",
+      "model": [
+        "28",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "采样算法（AuraFlow）",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.64"
+    }
+  },
+  "13": {
+    "inputs": {
+      "width": [
+        "50",
+        2
+      ],
+      "height": [
+        "50",
+        3
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "空Latent图像（SD3）",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.64"
+    }
+  },
+  "27": {
+    "inputs": {
+      "text": [
+        "50",
+        0
+      ],
+      "clip": [
+        "30",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.73"
+    }
+  },
+  "28": {
+    "inputs": {
+      "unet_name": [
+        "200",
+        0
+      ],
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.73"
+    }
+  },
+  "29": {
+    "inputs": {
+      "vae_name": [
+        "200",
+        2
+      ]
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.73"
+    }
+  },
+  "30": {
+    "inputs": {
+      "clip_name": [
+        "200",
+        1
+      ],
+      "type": "lumina2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.73"
+    }
+  },
+  "33": {
+    "inputs": {
+      "conditioning": [
+        "27",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "条件零化",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.73"
+    }
+  },
+  "40": {
+    "class_type": "DramaSaveKeyframe",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "shot": [
+        "50",
+        5
+      ]
+    },
+    "_meta": {
+      "title": "04 保存关键帧检查点"
+    }
+  },
+  "50": {
+    "class_type": "DramaShotPlan",
+    "inputs": {
+      "storyboard": [
+        "1",
+        0
+      ],
+      "index": 0,
+      "default_width": 736,
+      "default_height": 1312,
+      "style": "高品质3D国风玄幻动画电影，三维角色建模与立体五官，动画电影皮肤质感与细腻次表面散射，PBR金属和织物材质，精细发丝，电影级体积光与青金色轮廓光，能量粒子，清晰锐利的材质细节，高动态范围，竖屏电影构图，主体完整入镜并留足边缘空间",
+      "stage": "image",
+      "attempt": 1
+    },
+    "_meta": {
+      "title": "02 逐镜头提示词 / 尺寸 / seed"
+    }
+  },
+  "200": {
+    "inputs": {
+      "z_image_model": "z_image_turbo_bf16.safetensors",
+      "z_image_text": "qwen_3_4b.safetensors",
+      "z_image_vae": "ae.safetensors",
+      "wan_model": "wan2.2_ti2v_5B_fp16.safetensors",
+      "wan_text": "umt5_xxl_fp16.safetensors",
+      "wan_vae": "wan2.2_vae.safetensors",
+      "animate2_model": "wan_animate_2_int8_convrot.safetensors",
+      "animate2_text": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "animate2_clip": "clip_vision_h.safetensors",
+      "animate2_lora": "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
+      "animate2_vae": "Wan2_1_VAE_bf16.safetensors"
+    },
+    "class_type": "DramaModelGate",
+    "_meta": {
+      "title": "模型文件选择 / 启动门禁"
+    }
+  },
+  "201": {
+    "inputs": {
+      "unet_name": [
+        "200",
+        3
+      ],
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Wan 2.2 · 5B"
+    }
+  },
+  "202": {
+    "inputs": {
+      "clip_name": [
+        "200",
+        4
+      ],
+      "type": "wan",
+      "device": "cpu"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Wan 文本编码器 · CPU"
+    }
+  },
+  "203": {
+    "inputs": {
+      "vae_name": [
+        "200",
+        5
+      ]
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "VAELoader"
+    }
+  },
+  "204": {
+    "inputs": {
+      "text": [
+        "50",
+        1
+      ],
+      "clip": [
+        "202",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "动态动作提示词"
+    }
+  },
+  "205": {
+    "inputs": {
+      "text": "二维平面插画，赛璐璐，真人实拍，静止画面，严重肢体畸形，多余肢体，人物突变，服装变化，闪烁，字幕，水印，模糊，低质量",
+      "clip": [
+        "202",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "负向提示词"
+    }
+  },
+  "206": {
+    "inputs": {
+      "shift": 8,
+      "model": [
+        "201",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "ModelSamplingSD3"
+    }
+  },
+  "207": {
+    "inputs": {
+      "width": 736,
+      "height": 1312,
+      "length": 73,
+      "batch_size": 1,
+      "vae": [
+        "203",
+        0
+      ],
+      "positive": [
+        "204",
+        0
+      ],
+      "negative": [
+        "205",
+        0
+      ],
+      "start_image": [
+        "41",
+        0
+      ]
+    },
+    "class_type": "WanFirstLastFrameToVideo",
+    "_meta": {
+      "title": "首帧 + 可选尾帧动作约束"
+    }
+  },
+  "208": {
+    "inputs": {
+      "seed": [
+        "50",
+        4
+      ],
+      "steps": 20,
+      "cfg": 5,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "206",
+        0
+      ],
+      "positive": [
+        "207",
+        0
+      ],
+      "negative": [
+        "207",
+        1
+      ],
+      "latent_image": [
+        "207",
+        2
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "06 Wan 2.2 动态采样 · Euler"
+    }
+  },
+  "209": {
+    "inputs": {
+      "tile_size": 256,
+      "overlap": 64,
+      "temporal_size": 16,
+      "temporal_overlap": 4,
+      "samples": [
+        "208",
+        0
+      ],
+      "vae": [
+        "203",
+        0
+      ]
+    },
+    "class_type": "VAEDecodeTiled",
+    "_meta": {
+      "title": "分块视频解码"
+    }
+  },
+  "210": {
+    "inputs": {
+      "fps": 24,
+      "bit_depth": "auto",
+      "color_space": "sRGB",
+      "codec": "none",
+      "images": [
+        "213",
+        0
+      ]
+    },
+    "class_type": "CreateVideo",
+    "_meta": {
+      "title": "CreateVideo"
+    }
+  },
+  "211": {
+    "class_type": "DramaSaveClip",
+    "inputs": {
+      "video": [
+        "210",
+        0
+      ],
+      "shot": [
+        "50",
+        5
+      ]
+    },
+    "_meta": {
+      "title": "07 保存 Wan 2.2 动作草稿"
+    }
+  },
+  "1": {
+    "class_type": "DramaStoryboardInput",
+    "inputs": {
+      "project": "example-fantasy-story"
+    },
+    "_meta": {
+      "title": "01 分镜项目与角色设定"
+    }
+  },
+  "4": {
+    "class_type": "DramaQualitySettings",
+    "inputs": {
+      "max_retries": 2,
+      "visual_review": true,
+      "timeout_minutes": 180
+    },
+    "_meta": {
+      "title": "质检与有上限重试"
+    }
+  },
+  "5": {
+    "class_type": "DramaAudioSettings",
+    "inputs": {
+      "voice_enabled": true,
+      "voice_name": "Reed (中文（中国大陆）)",
+      "voice_rate": 170,
+      "subtitles": true,
+      "music": true
+    },
+    "_meta": {
+      "title": "角色配音与配乐设置"
+    }
+  },
+  "41": {
+    "class_type": "DramaKeyframeReview",
+    "inputs": {
+      "asset": [
+        "40",
+        0
+      ],
+      "shot": [
+        "50",
+        5
+      ],
+      "quality": [
+        "4",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "05 关键帧视觉质检 / 角色外观"
+    }
+  },
+  "212": {
+    "class_type": "DramaVideoReview",
+    "inputs": {
+      "clip": [
+        "211",
+        0
+      ],
+      "shot": [
+        "50",
+        5
+      ],
+      "quality": [
+        "4",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "08 Animate2 转绘后动态质检"
+    }
+  },
+  "300": {
+    "class_type": "DramaEpisodeAssets",
+    "inputs": {
+      "approved_clip": [
+        "212",
+        0
+      ],
+      "shot": [
+        "50",
+        5
+      ]
+    },
+    "_meta": {
+      "title": "09 汇集全剧已通过的镜头"
+    }
+  },
+  "310": {
+    "class_type": "DramaOutputSettings",
+    "inputs": {
+      "width": 1080,
+      "height": 1920,
+      "fps": 24,
+      "delivery_dir": "./delivery"
+    },
+    "_meta": {
+      "title": "竖屏高清输出 / 桌面交付目录"
+    }
+  },
+  "301": {
+    "class_type": "DramaVoiceLines",
+    "inputs": {
+      "episode": [
+        "300",
+        0
+      ],
+      "audio": [
+        "5",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "10 逐句生成中文配音"
+    }
+  },
+  "302": {
+    "class_type": "DramaTimelineSubtitles",
+    "inputs": {
+      "episode": [
+        "300",
+        0
+      ],
+      "voices": [
+        "301",
+        0
+      ],
+      "audio": [
+        "5",
+        0
+      ],
+      "output": [
+        "310",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "11 时间轴 / 台词字幕 SRT"
+    }
+  },
+  "303": {
+    "class_type": "DramaMixSound",
+    "inputs": {
+      "episode": [
+        "300",
+        0
+      ],
+      "voices": [
+        "301",
+        0
+      ],
+      "timeline": [
+        "302",
+        0
+      ],
+      "audio": [
+        "5",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "12 配音 / 音乐 / 音效混音"
+    }
+  },
+  "304": {
+    "class_type": "DramaComposeEpisode",
+    "inputs": {
+      "episode": [
+        "300",
+        0
+      ],
+      "timeline": [
+        "302",
+        0
+      ],
+      "mix": [
+        "303",
+        0
+      ],
+      "output": [
+        "310",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "13 1080×1920 竖屏合成 / 字幕烧录"
+    }
+  },
+  "305": {
+    "class_type": "DramaFinalReview",
+    "inputs": {
+      "movie": [
+        "304",
+        0
+      ],
+      "output": [
+        "310",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "14 成片画面 / 时长 / 音轨质检"
+    }
+  },
+  "306": {
+    "class_type": "DramaDeliverEpisode",
+    "inputs": {
+      "final": [
+        "305",
+        0
+      ],
+      "output": [
+        "310",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "15 保存成片 / 字幕 / 封面 / 素材"
+    }
+  },
+  "400": {
+    "class_type": "DramaBatchRun",
+    "inputs": {
+      "storyboard": [
+        "1",
+        0
+      ],
+      "chain": [
+        "306",
+        0
+      ],
+      "animation": [
+        "401",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "16 全分镜调度 / 自动纠错重试 / 停止恢复"
+    }
+  },
+  "213": {
+    "class_type": "DramaEndpointFrames",
+    "inputs": {
+      "frames": [
+        "209",
+        0
+      ],
+      "start_image": [
+        "41",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "硬锁首帧 / 可选尾帧"
+    }
+  },
+  "401": {
+    "class_type": "DramaAnimate2Settings",
+    "inputs": {
+      "preset": "production"
+    },
+    "_meta": {
+      "title": "Wan Animate2 角色动作迁移"
+    }
+  }
+}

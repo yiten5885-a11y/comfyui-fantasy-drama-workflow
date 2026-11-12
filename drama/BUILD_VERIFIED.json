@@ -1,0 +1,26 @@
+{
+  "build_status": "passed_static_file_integrity",
+  "hash_mode": "Python/JS/HTML bytes; JSON normalized; workflow graph topology and API graph inputs hashed",
+  "files": {
+    "drama/production.py": "1abfca7fb7d300d6363493af48f4ca0b2fc29c5859b2752eab0db1a79e6cd2e8",
+    "drama/batch.py": "6e54a982c3e311621b293a5eb3df5e6d029f892c5c1b33afc7ca32646abd027f",
+    "drama/render_cinema.py": "e55ee8e28eb239a965fa25cb28589675e7309bbdefe59e6a4ba4fcd1067aa103",
+    "drama/workflow_graph.py": "4feaf75a4ec8daf598e1c0b19e9319d88d229dfe6c311c9640ad532d78ec4e58",
+    "drama/workflows/3d_full_api.json": "bf2f7258e8134832e14a9d988e9205cc2c3380586207a1581786c59724894196",
+    "drama/workflows/animate2_transfer_api.json": "92aea9f127d373e0751a6c64db5b3bd4f310a44ceef2630ab6ac5954c683d6ff",
+    "drama/workflows/animate2_transfer_api.meta.json": "8c7cf83cc7a29034d8b6a6a0a2f477800de3eb75711c6a76c59072b7f2cc38ea",
+    "custom_nodes/drama_pipeline/pipeline_nodes.py": "5e7f56cabd56d1b5d756eb7cfc86bd3b07c787c3da850b5230bc28a1e1b726b3",
+    "drama/workflow_contract.py": "94fa3a3ce23763375adb82ee1c269fde827557dd39a16dc30ee8b0e634eb4527",
+    "drama/workflow_build.py": "5cdc8938ac6f0d2bd46bba1b4c2e28e8b7ca14bffdadcab9b767afbb3637b759",
+    "drama/production_config.json": "c3e06fbc4d1e01beee6cb1418663a0495eb946506de2792222de9931834f41d5",
+    "custom_nodes/drama_pipeline/__init__.py": "43147eb2bd3da81088f604bef58e2bb16ace4f5e108ab6358d2266de6dc493c0",
+    "custom_nodes/drama_pipeline/production_server.py": "7097128beb67fc165de898b7a7422a03d783af20a8891eb616380be49e4a4057",
+    "custom_nodes/drama_pipeline/production_nodes.py": "9e60d8303786e70207dddf5d7df8f99a070884778c7357cacfcb5c62c799e878",
+    "custom_nodes/drama_pipeline/production.html": "d92d7dc6d7eb12455dfb608b7085b37b05e4fd64de5a3fa03d386a32e29ab419",
+    "custom_nodes/drama_pipeline/web/production.js": "988101c9c01e02c0440c3d0db884aef73e20b095357bbc395597b4fed1595086",
+    "user/default/workflows/玄幻-全动态短剧（自动纠错重试）.json": "531b8a1d8e21bff3675286f2e9d6cba0ad1e95a01642c7293c80ee36b7304f85",
+    "user/default/workflows/玄幻-镜头生成链（Z-Image接Wan）.json": "fe2f5fa2e91b231d50760291c9f589920bfd600ed0fbdf4b267537cd8c74ad15",
+    "user/default/workflows/玄幻3D-完整出片工作流（展开版）.json": "50eca4d2fc981fcec62359bb0859900c8031e23436aea89413caaf0f7e201f28"
+  },
+  "note": "Sanitized public distribution. Inference remains disabled by default."
+}

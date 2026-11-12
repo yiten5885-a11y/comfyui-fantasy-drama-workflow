@@ -1,0 +1,478 @@
+{
+  "id": "8b25599f-2882-4005-b071-dd8f71f95232",
+  "revision": 0,
+  "last_node_id": 7,
+  "last_link_id": 5,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "DramaStoryboardInput",
+      "pos": [
+        20,
+        80
+      ],
+      "size": [
+        350,
+        110
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "project",
+          "name": "project",
+          "type": "COMBO",
+          "widget": {
+            "name": "project"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "storyboard",
+          "name": "storyboard",
+          "type": "DRAMA_STORYBOARD",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DramaStoryboardInput"
+      },
+      "widgets_values": [
+        "example-fantasy-story"
+      ],
+      "widgets_values_named": {
+        "project": "example-fantasy-story"
+      }
+    },
+    {
+      "id": 2,
+      "type": "DramaImageSettings",
+      "pos": [
+        20,
+        260
+      ],
+      "size": [
+        350,
+        250
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "default_width",
+          "name": "default_width",
+          "type": "INT",
+          "widget": {
+            "name": "default_width"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "default_height",
+          "name": "default_height",
+          "type": "INT",
+          "widget": {
+            "name": "default_height"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "steps",
+          "name": "steps",
+          "type": "INT",
+          "widget": {
+            "name": "steps"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "style",
+          "name": "style",
+          "type": "STRING",
+          "widget": {
+            "name": "style"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "DRAMA_IMAGE_SETTINGS",
+          "name": "DRAMA_IMAGE_SETTINGS",
+          "type": "DRAMA_IMAGE_SETTINGS",
+          "links": [
+            2
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DramaImageSettings"
+      },
+      "widgets_values": [
+        736,
+        1312,
+        8,
+        "高品质3D国风玄幻动画电影，三维角色建模与立体五官，动画电影皮肤质感与细腻次表面散射，PBR金属和织物材质，精细发丝，电影级体积光与青金色轮廓光，能量粒子，清晰锐利的材质细节，高动态范围，竖屏电影构图，主体完整入镜并留足边缘空间"
+      ],
+      "widgets_values_named": {
+        "default_width": 736,
+        "default_height": 1312,
+        "steps": 8,
+        "style": "高品质3D国风玄幻动画电影，三维角色建模与立体五官，动画电影皮肤质感与细腻次表面散射，PBR金属和织物材质，精细发丝，电影级体积光与青金色轮廓光，能量粒子，清晰锐利的材质细节，高动态范围，竖屏电影构图，主体完整入镜并留足边缘空间"
+      },
+      "title": "② 3D国风关键帧设置"
+    },
+    {
+      "id": 3,
+      "type": "DramaVideoSettings",
+      "pos": [
+        20,
+        590
+      ],
+      "size": [
+        350,
+        120
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "preset",
+          "name": "preset",
+          "type": "COMBO",
+          "widget": {
+            "name": "preset"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "DRAMA_VIDEO_SETTINGS",
+          "name": "DRAMA_VIDEO_SETTINGS",
+          "type": "DRAMA_VIDEO_SETTINGS",
+          "links": [
+            3
+          ]
+        }
+      ],
+      "title": "③ 3D高清动态 · 736×1312 / 73帧 / Euler",
+      "properties": {
+        "Node name for S&R": "DramaVideoSettings"
+      },
+      "widgets_values": [
+        "production"
+      ],
+      "widgets_values_named": {
+        "preset": "production"
+      }
+    },
+    {
+      "id": 4,
+      "type": "DramaQualitySettings",
+      "pos": [
+        -10,
+        830
+      ],
+      "size": [
+        350,
+        180
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "max_retries",
+          "name": "max_retries",
+          "type": "INT",
+          "widget": {
+            "name": "max_retries"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "visual_review",
+          "name": "visual_review",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "visual_review"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "timeout_minutes",
+          "name": "timeout_minutes",
+          "type": "INT",
+          "widget": {
+            "name": "timeout_minutes"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "DRAMA_QUALITY_SETTINGS",
+          "name": "DRAMA_QUALITY_SETTINGS",
+          "type": "DRAMA_QUALITY_SETTINGS",
+          "links": [
+            4
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DramaQualitySettings"
+      },
+      "widgets_values": [
+        2,
+        true,
+        180
+      ],
+      "widgets_values_named": {
+        "max_retries": 2,
+        "visual_review": true,
+        "timeout_minutes": 180
+      }
+    },
+    {
+      "id": 5,
+      "type": "DramaAudioSettings",
+      "pos": [
+        460,
+        940
+      ],
+      "size": [
+        350,
+        240
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "voice_enabled",
+          "name": "voice_enabled",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "voice_enabled"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "voice_name",
+          "name": "voice_name",
+          "type": "STRING",
+          "widget": {
+            "name": "voice_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "voice_rate",
+          "name": "voice_rate",
+          "type": "INT",
+          "widget": {
+            "name": "voice_rate"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "subtitles",
+          "name": "subtitles",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "subtitles"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "music",
+          "name": "music",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "music"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "DRAMA_AUDIO_SETTINGS",
+          "name": "DRAMA_AUDIO_SETTINGS",
+          "type": "DRAMA_AUDIO_SETTINGS",
+          "links": [
+            5
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DramaAudioSettings"
+      },
+      "widgets_values": [
+        true,
+        "Reed (中文（中国大陆）)",
+        170,
+        true,
+        true
+      ],
+      "widgets_values_named": {
+        "voice_enabled": true,
+        "voice_name": "Reed (中文（中国大陆）)",
+        "voice_rate": 170,
+        "subtitles": true,
+        "music": true
+      }
+    },
+    {
+      "id": 6,
+      "type": "DramaProductionSubmit",
+      "pos": [
+        910,
+        340
+      ],
+      "size": [
+        470,
+        350
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "storyboard",
+          "name": "storyboard",
+          "type": "DRAMA_STORYBOARD",
+          "link": 1
+        },
+        {
+          "localized_name": "image",
+          "name": "image",
+          "type": "DRAMA_IMAGE_SETTINGS",
+          "link": 2
+        },
+        {
+          "localized_name": "video",
+          "name": "video",
+          "type": "DRAMA_VIDEO_SETTINGS",
+          "link": 3
+        },
+        {
+          "localized_name": "quality",
+          "name": "quality",
+          "type": "DRAMA_QUALITY_SETTINGS",
+          "link": 4
+        },
+        {
+          "localized_name": "audio",
+          "name": "audio",
+          "type": "DRAMA_AUDIO_SETTINGS",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "job_url",
+          "name": "job_url",
+          "type": "STRING",
+          "links": []
+        }
+      ],
+      "title": "⑥ 分镜 → 关键帧 → 动态镜头 → 质检重试 → MP4",
+      "properties": {
+        "Node name for S&R": "DramaProductionSubmit"
+      },
+      "widgets_values": [],
+      "widgets_values_named": {}
+    },
+    {
+      "id": 7,
+      "type": "MarkdownNote",
+      "pos": [
+        20,
+        -190
+      ],
+      "size": [
+        1400,
+        190
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "MarkdownNote",
+      "properties": {
+        "Node name for S&R": "MarkdownNote"
+      },
+      "widgets_values": [
+        "# 3D国风玄幻 · 高清燃向自动出片\n\n角色为立体3D国漫造型，主打挥剑、剑气弧、冲击波与能量粒子。\n完整档原生 736×1312 / 73帧 / 24fps，最终 1080×1920 竖屏输出；1080输出包含放大与居中裁切。\n单镜头内部模型连线见「玄幻-镜头生成链（Z-Image接Wan）」；不合格动作或明显画风错误会按上限重试。\n\n从任务进度页可停止/恢复制作；停止后不自动重试。成片媒体验收通过后，自动复制到桌面「delivery」目录，包含 MP4、字幕、封面及启用的素材。"
+      ],
+      "widgets_values_named": {
+        "text": "# 玄幻国风动漫 · 批量自动出片\n\n工作流搭建检查已通过。提交时实时检查模型启动门禁；修改代码或连线后需重新检查。\n五个输入节点接入批量任务节点；自动保存分镜与设置快照，逐镜头生成、质检、正向纠错重试，最后配音、烧字幕、混音并验收 MP4。\n单镜头完整接线见「玄幻-镜头生成链（Z-Image接Wan）」。预览档用于链路测试；完整规格为 576×1024 / 73帧。"
+      },
+      "color": "#432",
+      "bgcolor": "#653"
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      6,
+      0,
+      "DRAMA_STORYBOARD"
+    ],
+    [
+      2,
+      2,
+      0,
+      6,
+      1,
+      "DRAMA_IMAGE_SETTINGS"
+    ],
+    [
+      3,
+      3,
+      0,
+      6,
+      2,
+      "DRAMA_VIDEO_SETTINGS"
+    ],
+    [
+      4,
+      4,
+      0,
+      6,
+      3,
+      "DRAMA_QUALITY_SETTINGS"
+    ],
+    [
+      5,
+      5,
+      0,
+      6,
+      4,
+      "DRAMA_AUDIO_SETTINGS"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 1.031684210526316,
+      "offset": [
+        227.20844811753875,
+        -56.820142715029206
+      ]
+    }
+  },
+  "version": 0.4
+}
