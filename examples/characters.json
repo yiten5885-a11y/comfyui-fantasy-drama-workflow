@@ -3,7 +3,17 @@
   "characters": {
     "少年剑修": {
       "anchor": "少年剑修，青年男性，黑色高束发，深青色金纹长袍，银色肩甲，手持银灰长剑；所有镜头保持同一面部、发型、服装与道具。",
-      "base_seed": 26001
+      "base_seed": 26001,
+      "gender": "male",
+      "voice": "Reed",
+      "voice_rate": 175
+    },
+    "白衣师姐": {
+      "anchor": "白衣师姐，年轻女性，乌黑长发半束，白色银纹广袖长裙，腰悬青玉佩；所有镜头保持同一面部、发型、服装与配饰。",
+      "base_seed": 26101,
+      "gender": "female",
+      "voice": "Tingting",
+      "voice_rate": 165
     }
   }
 }

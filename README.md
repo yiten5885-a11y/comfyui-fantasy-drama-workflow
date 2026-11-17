@@ -8,7 +8,7 @@
 
 > **完整动态出片尚未通过验收。** 之前的 Wan/Animate2 片段在视觉复检中出现人物、服装、姿态或画风漂移；最后一次 Animate2 任务没有完成，未进入最终配音、字幕、混音和 MP4 交付。本仓库代表一套已构建、可安装试跑的工作流，不代表已验收的端到端成片，也不含任何样片。详见 [`docs/VALIDATION.md`](docs/VALIDATION.md)。
 
-**第一次使用请看 [v1.0.0 开放指南](docs/OPEN_GUIDE_v1.0.0.md)**：环境要求、逐步上手、制作流程、排错和发布流程都在里面。
+**使用说明**：[v1.1.0 开放指南](docs/OPEN_GUIDE_v1.1.0.md)（配音与画面：选声、试听、整集声音样片、字幕、音效、配乐、镜头变速、转场、角色一致性）；环境准备和首次安装见 [v1.0.0 开放指南](docs/OPEN_GUIDE_v1.0.0.md) 第 2～3 节。
 
 ## 快速开始
 
@@ -52,9 +52,11 @@ python install.py /path/to/ComfyUI
 
 每个项目一个文件夹，放 `storyboard.json`，或 `shots.csv` 加 `characters.json`。字段示例见 [`examples/`](examples/)。`description` 描述首帧画面，`video_prompt` 描述连续动作；复杂动作可以填 `end_frame` 并提供同名尾帧图。分镜在导入和提交时校验，页面会指出具体是哪个镜头的哪个字段有问题。
 
+v1.1.0 起，角色表可以写 `voice`、`voice_rate`、`gender` 指定配音；每个镜头可以写 `grade`（色调）、`transition`（`dip` `dissolve` `cut` `flash`）和 `sfx`（如 `wind|sword@1.4`）。可用名称见开放指南第 3.6 节和第 4.3 节。
+
 ## 验收边界
 
-v1.0.0 在没有 ComfyUI、模型和 GPU 的干净环境中通过了 11 项离线结构检查和 47 项单元测试，制作页面在演示数据上做过浏览器检查。这些检查都不启动模型，也不能说明成片质量。完整动态出片尚未通过验收。
+v1.1.0 在没有 ComfyUI、模型和 GPU 的干净环境中通过了 11 项离线结构检查和 74 项单元测试（配音使用替身程序），制作页面在演示数据上做过浏览器检查。这些检查都不启动模型，也不能说明成片质量。完整动态出片尚未通过验收；本版本中动作提示词带角色外观、视频复检对照关键帧两项改动还没有在真实模型上验证。
 
 详细边界见 [`docs/VALIDATION.md`](docs/VALIDATION.md)，更新记录见 [`CHANGELOG.md`](CHANGELOG.md)，依赖许可见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
@@ -64,4 +66,4 @@ v1.0.0 在没有 ComfyUI、模型和 GPU 的干净环境中通过了 11 项离�
 
 A local ComfyUI workflow for vertical 3D Chinese fantasy animation: storyboard intake, keyframes, Wan motion drafts, Animate2 transfer, bounded visual retry, Chinese voice/subtitles, audio mix, and 1080×1920 composition. Model weights and ComfyUI itself are not included. Dynamic end-to-end acceptance has not passed; read the validation boundary above before production use.
 
-Install with `python install.py /path/to/ComfyUI --apply`, then follow the readiness checklist at `/drama/production`. Inference stays disabled until you open `drama/build_gate.json` yourself. The full guide is in Chinese: [`docs/OPEN_GUIDE_v1.0.0.md`](docs/OPEN_GUIDE_v1.0.0.md).
+Install with `python install.py /path/to/ComfyUI --apply`, then follow the readiness checklist at `/drama/production`. Inference stays disabled until you open `drama/build_gate.json` yourself. Guides are in Chinese: [`docs/OPEN_GUIDE_v1.1.0.md`](docs/OPEN_GUIDE_v1.1.0.md) (voice and picture) and [`docs/OPEN_GUIDE_v1.0.0.md`](docs/OPEN_GUIDE_v1.0.0.md) (setup).

@@ -57,7 +57,7 @@ details>summary{cursor:pointer;list-style:none}details>summary::-webkit-details-
 
 /* submit */
 .steps{display:grid;gap:22px;margin-top:16px}
-.step{display:grid;grid-template-columns:30px 1fr;gap:12px}
+.step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:12px}
 .step>i{width:28px;height:28px;border-radius:50%;border:1px solid var(--accent);color:var(--accent);display:grid;place-items:center;font-style:normal;font-size:13px}
 .drop{border:1px dashed var(--line);border-radius:10px;padding:12px;margin-top:10px}
 .drop.over{border-color:var(--accent);background:var(--inset)}
@@ -78,7 +78,7 @@ details>summary{cursor:pointer;list-style:none}details>summary::-webkit-details-
 /* jobs */
 table{border-collapse:collapse;width:100%;margin-top:10px}
 th,td{text-align:left;border-bottom:1px solid var(--line);padding:9px 8px;font-size:13px;vertical-align:top}
-th{color:var(--muted);font-weight:500}
+th{color:var(--muted);font-weight:500;white-space:nowrap}
 .scroll{overflow-x:auto}
 .badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid currentColor;vertical-align:middle;margin-left:6px}
 .badge.running,.badge.queued{color:var(--accent)}.badge.complete{color:var(--ok);background:var(--chip)}
@@ -98,6 +98,19 @@ video{max-width:300px;max-height:534px;width:100%;border-radius:10px;background:
 dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:14px;width:min(860px,92vw);padding:20px}
 dialog::backdrop{background:rgba(0,0,0,.55)}
 footer{margin-top:28px}
+.sub{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.sub h4{margin:0 0 6px;font-size:14px}
+button.play{padding:4px 10px;font-size:12px;border-radius:20px;background:transparent;color:var(--accent);border-color:var(--accent);white-space:nowrap}
+button.play.playing{background:var(--accent);color:var(--bg)}
+.tag2{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:var(--chip);margin:1px 2px 1px 0;white-space:nowrap}
+.longer{color:var(--warn)}
+audio{width:100%;max-width:520px;margin:8px 0;display:block}
+.thumb{display:block;width:54px;height:96px;object-fit:cover;border-radius:6px;background:var(--inset);border:1px solid var(--line);cursor:zoom-in;padding:0}
+.thumb img{width:100%;height:100%;object-fit:cover;border-radius:5px;display:block}
+.shotcell{display:flex;gap:10px;align-items:flex-start}
+.media{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:12px}
+.media figure{margin:0}.media figcaption{font-size:12px;color:var(--muted);margin-bottom:6px}
+.media img,.media video{width:100%;max-height:60vh;object-fit:contain;border-radius:8px;background:#000;display:block}
 @media (max-width:640px){main{padding:20px 14px 48px}.card{padding:16px}.result{grid-template-columns:1fr}.track li{font-size:11px}select{min-width:0;width:100%}}
 </style>
 </head>
@@ -164,6 +177,12 @@ footer{margin-top:28px}
 </footer>
 </main>
 
+<dialog id="mediabox" aria-labelledby="mediatitle">
+  <div class="spread"><h2 id="mediatitle">镜头画面</h2><button id="mediaclose" class="quiet" type="button">关闭</button></div>
+  <p id="mediameta" class="muted"></p>
+  <div id="mediagrid" class="media"></div>
+</dialog>
+
 <dialog id="logbox" aria-labelledby="logtitle">
   <div class="spread"><h2 id="logtitle">后台日志</h2><span class="row"><button id="logrefresh" class="quiet" type="button">刷新</button><button id="logclose" class="quiet" type="button">关闭</button></span></div>
   <p id="logmeta" class="muted"></p>
@@ -174,7 +193,7 @@ footer{margin-top:28px}
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const params = new URLSearchParams(location.search);
-const view = {job: params.get('job') || '', inference: false, ready: null, presets: null, summaryOk: false, logJob: '', tick: 0, busy: false};
+const view = {job: params.get('job') || '', inference: false, ready: null, presets: null, summaryOk: false, summary: null, jobs: {}, logJob: '', tick: 0, busy: false};
 
 const LABELS = {
   queued:'排队中', running:'运行中', complete:'已完成', failed:'失败', interrupted:'已中断', stopped:'已停止',
@@ -248,19 +267,34 @@ async function loadProjects(selected) {
   $('example').hidden = !data.example_available;
   await loadSummary();
 }
+const VOICE_STATE = {true: '<span class="pass">已安装</span>', false: '<span class="nopass">未安装</span>', null: '<span class="muted">—</span>'};
+function shotTags(shot) {
+  return [shot.motion && ['运镜', shot.motion], shot.grade && ['色调', shot.grade], shot.transition && ['转场', shot.transition], shot.sfx && ['音效', shot.sfx]]
+    .filter(Boolean).map(([k, v]) => `<span class="tag2">${k} ${esc(v)}</span>`).join('') || '<span class="muted">默认</span>';
+}
 async function loadSummary() {
   const box = $('preview'), name = $('project').value;
-  view.summaryOk = false;
+  view.summaryOk = false; view.summary = null;
   if (!name) { box.hidden = true; renderStart(); return; }
   try {
     const s = await api('/api/drama/projects/' + encodeURIComponent(name));
-    view.summaryOk = true;
-    const rows = s.shots.map(shot => `<tr><td>${esc(shot.shot_id)}</td><td>${esc(shot.character || '—')}</td><td>${esc(shot.camera || '—')}</td><td>${esc(shot.duration_sec)} 秒</td><td>${esc(shot.dialogue || '—')}</td><td>${shot.has_video_prompt ? '有' : '沿用首帧'}${shot.end_frame ? ' · 尾帧 ' + esc(shot.end_frame) : ''}</td></tr>`).join('');
+    view.summaryOk = true; view.summary = s;
+    const engine = s.voice_engine || {available: false, detail: ''};
+    const can = engine.available ? '' : ` disabled title="${esc(engine.detail)}"`;
+    const rows = s.shots.map(shot => `<tr><td>${esc(shot.shot_id)}</td><td>${esc(shot.character || '—')}</td><td>${esc(shot.camera || '—')}</td><td>${esc(shot.duration_sec)} 秒</td>
+      <td>${shot.dialogue ? `${esc(shot.dialogue)} <button class="play" data-play="shot" data-shot="${esc(shot.shot_id)}"${can}>▶</button>` : '—'}</td>
+      <td>${shotTags(shot)}</td><td>${shot.has_video_prompt ? '有' : '沿用首帧'}${shot.end_frame ? ' · 尾帧 ' + esc(shot.end_frame) : ''}</td></tr>`).join('');
+    const cast = s.cast.map(row => `<tr><td>${esc(row.speaker)}</td><td>${esc(row.voice)}</td><td>${row.rate}</td><td class="muted">${esc(row.source)}</td><td>${row.lines} 句（${esc(row.shots.join('、'))}）</td><td>${VOICE_STATE[String(row.installed)] || VOICE_STATE.null}</td>
+      <td><button class="play" data-play="speaker" data-speaker="${esc(row.speaker)}"${can}>▶ 试听</button></td></tr>`).join('');
     box.className = 'preview';
     box.innerHTML = `<strong>${esc(s.title)}</strong>${s.logline ? '<p>' + esc(s.logline) + '</p>' : ''}
       <div class="chips"><span>${s.shot_count} 个镜头</span><span>分镜时长 ${s.duration_sec} 秒</span><span>${s.dialogue_lines} 句台词</span><span>角色：${esc(s.characters.join('、') || '未设定')}</span><span>${esc(s.source)}</span></div>
       ${s.warnings.length ? '<ul class="notes">' + s.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul>' : ''}
-      <details><summary class="muted">查看镜头列表 ▾</summary><div class="scroll"><table><tr><th>镜头</th><th>角色</th><th>机位</th><th>时长</th><th>台词</th><th>动作提示词</th></tr>${rows}</table></div></details>`;
+      <details data-k="shots"><summary class="muted">查看镜头列表 ▾</summary><div class="scroll"><table><tr><th>镜头</th><th>角色</th><th>机位</th><th>时长</th><th>台词</th><th>画面与声音</th><th>动作提示词</th></tr>${rows}</table></div></details>
+      ${s.cast.length ? `<div class="sub"><h4>配音表</h4><p class="muted">配音引擎：${esc(engine.detail || '未知')}。音色按 角色表 voice → 配置 per_character → 性别 → 名字推断 → 默认 的顺序决定；在 characters 里给角色加 voice、voice_rate、gender 即可调整。</p>
+        <div class="scroll"><table><tr><th>角色</th><th>音色</th><th>语速</th><th>来源</th><th>台词</th><th>语音</th><th></th></tr>${cast}</table></div></div>` : ''}
+      <div class="sub"><h4>整集声音样片</h4><p class="muted">在生成任何画面之前，先听配音、音效和配乐，并查看按配音长度调整后的镜头时长和字幕分段。不启动模型，不受推理门禁限制。</p>
+        <div class="row"><button id="soundtrack" class="quiet" type="button"${can}>生成声音样片</button><span id="tracknote" class="muted"></span></div><div id="track"></div></div>`;
   } catch (error) {
     box.className = 'preview invalid';
     box.innerHTML = `<strong class="nopass">分镜未通过校验</strong><p>${esc(error.message)}</p><p class="muted">修正 input/drama/${esc(name)}/ 下的文件，或重新导入。</p>`;
@@ -268,6 +302,43 @@ async function loadSummary() {
   box.hidden = false;
   renderStart();
 }
+const player = new Audio();
+let playingButton = null;
+player.addEventListener('ended', () => { if (playingButton) { playingButton.classList.remove('playing'); playingButton.textContent = playingButton.dataset.label; playingButton = null; } });
+async function playLine(button) {
+  if (playingButton === button && !player.paused) { player.pause(); player.dispatchEvent(new Event('ended')); return; }
+  if (playingButton) player.dispatchEvent(new Event('ended'));
+  button.dataset.label = button.dataset.label || button.textContent;
+  button.disabled = true; button.textContent = '合成中…';
+  try {
+    const body = button.dataset.play === 'shot' ? {shot_id: button.dataset.shot} : {speaker: button.dataset.speaker};
+    const data = await api('/api/drama/projects/' + encodeURIComponent($('project').value) + '/voice-preview', body);
+    player.src = data.url; await player.play();
+    playingButton = button; button.classList.add('playing'); button.textContent = '■ ' + data.duration + ' 秒';
+    button.title = data.voice + ' · 语速 ' + data.rate + ' · ' + data.text;
+  } catch (error) { say('试听失败：' + error.message, 'error'); button.textContent = button.dataset.label; }
+  finally { button.disabled = false; }
+}
+async function buildSoundtrack(button) {
+  button.disabled = true; $('tracknote').textContent = '正在合成配音、音效和配乐…';
+  try {
+    const t = await api('/api/drama/projects/' + encodeURIComponent($('project').value) + '/soundtrack', {});
+    const rows = t.shots.map(row => `<tr><td>${esc(row.shot_id)}</td><td>${row.start.toFixed(1)} 秒</td><td>${row.planned} → <span class="${row.actual > row.planned + 0.05 ? 'longer' : ''}">${row.actual} 秒</span></td>
+      <td>${row.voice_sec ? row.voice_sec + ' 秒' : '—'}</td><td>${row.cues.length ? row.cues.map(c => `<span class="tag2">${c[0].toFixed(1)}–${c[1].toFixed(1)}s ${esc(c[2])}</span>`).join('') : '—'}</td><td>${esc(row.sfx || '—')}</td></tr>`).join('');
+    const longer = t.shots.filter(row => row.actual > row.planned + 0.05).map(row => row.shot_id);
+    $('track').innerHTML = `<audio controls src="${t.url}"></audio>
+      <p class="muted">总长 ${t.total} 秒（含片头 ${t.intro} 秒）· ${t.cue_count} 条字幕 · <a href="${t.srt}" download="subtitles.srt">下载 SRT</a>${longer.length ? ' · <span class="longer">' + longer.join('、') + ' 因配音或最短时长被加长</span>' : ''}</p>
+      <div class="scroll"><table><tr><th>镜头</th><th>起点</th><th>分镜 → 实际时长</th><th>配音</th><th>字幕分段（镜头内时间）</th><th>音效</th></tr>${rows}</table></div>`;
+    $('tracknote').textContent = '';
+  } catch (error) { $('tracknote').textContent = ''; say('声音样片生成失败：' + error.message, 'error'); }
+  finally { button.disabled = false; }
+}
+$('preview').addEventListener('click', event => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  if (button.dataset.play) playLine(button);
+  else if (button.id === 'soundtrack') buildSoundtrack(button);
+});
 async function loadPresets() {
   const data = await api('/api/drama/presets');
   view.presets = data.presets;
@@ -295,6 +366,28 @@ function stageCell(job, sid, kind) {
   const failure = stage.status === 'failed' && stage.error && !issues ? `<div class="nopass">${esc(String(stage.error).slice(0, 160))}</div>` : '';
   return `<td>${esc(LABELS[stage.status] || stage.status || '待处理')}${stage.attempts ? ' · 第 ' + stage.attempts + ' 次' : ''}${verdict}${issues}${failure}</td>`;
 }
+function mediaUrl(job, sid, kind, stage) {
+  return `/api/drama/jobs/${encodeURIComponent(job.job_id)}/media?shot=${encodeURIComponent(sid)}&kind=${kind}&v=${esc(String((stage && (stage.sha256 || stage.attempts)) || '').slice(0, 12))}`;
+}
+function shotCell(job, sid) {
+  const image = (job.shots[sid] || {}).image;
+  if (!image || image.status !== 'complete') return esc(sid);
+  return `<div class="shotcell"><button class="thumb" data-act="media" data-id="${esc(job.job_id)}" data-shot="${esc(sid)}" title="查看 ${esc(sid)} 的画面"><img loading="lazy" alt="${esc(sid)} 关键帧" src="${mediaUrl(job, sid, 'image', image)}"></button><span>${esc(sid)}</span></div>`;
+}
+function openMedia(id, sid) {
+  const job = view.jobs[id];
+  if (!job) return;
+  const stages = job.shots[sid] || {}, video = stages.video || {};
+  const items = [];
+  if ((stages.image || {}).status === 'complete') items.push(['关键帧', `<img alt="关键帧" src="${mediaUrl(job, sid, 'image', stages.image)}">`]);
+  if (video.driver_path) items.push(['Wan 动作草稿', `<video controls loop muted playsinline src="${mediaUrl(job, sid, 'draft', {sha256: video.driver_sha256})}"></video>`]);
+  if (video.path && ['complete', 'failed'].includes(video.status)) items.push([video.driver_path ? 'Animate2 角色迁移（进入成片）' : '动态镜头（进入成片）', `<video controls loop muted playsinline autoplay src="${mediaUrl(job, sid, 'video', video)}"></video>`]);
+  const issues = [...((stages.image || {}).quality_issues || []), ...(video.quality_issues || [])];
+  $('mediatitle').textContent = '镜头 ' + sid;
+  $('mediameta').innerHTML = `${esc(job.title || job.project)} · 任务 ${esc(id)}${issues.length ? '<br>质检意见：' + issues.map(esc).join('；') : ''}`;
+  $('mediagrid').innerHTML = items.map(([label, html]) => `<figure><figcaption>${label}</figcaption>${html}</figure>`).join('') || '<p class="muted">这个镜头还没有可查看的画面。</p>';
+  $('mediabox').showModal();
+}
 function renderJob(job) {
   const id = esc(job.job_id), shots = job.shots || {};
   const ids = job.shot_ids && job.shot_ids.length ? job.shot_ids : Object.keys(shots);
@@ -305,7 +398,7 @@ function renderJob(job) {
   const done = kind => ids.filter(sid => ((shots[sid] || {})[kind] || {}).status === 'complete').length;
   const progress = ids.length ? `关键帧 ${done('image')} / ${ids.length} · 动态镜头 ${done('video')} / ${ids.length}` : '';
   const phase = job.status === 'complete' ? '全部阶段完成' : `${LABELS[job.phase] || job.phase || ''} ${job.current_shot || ''}`;
-  const rows = ids.map(sid => `<tr><td>${esc(sid)}</td>${stageCell(job, sid, 'image')}${stageCell(job, sid, 'video')}${transfer ? stageCell(job, sid, 'video_transfer') : ''}</tr>`).join('');
+  const rows = ids.map(sid => `<tr><td>${shotCell(job, sid)}</td>${stageCell(job, sid, 'image')}${stageCell(job, sid, 'video')}${transfer ? stageCell(job, sid, 'video_transfer') : ''}</tr>`).join('');
   const hint = job.error ? (HINTS.find(([pattern]) => pattern.test(job.error)) || [])[1] : '';
   const alert = job.error ? `<div class="alert"><b>${halted ? '需要你处理' : '提示'}</b>：${esc(job.error)}${hint ? '<small>' + esc(hint) + '</small>' : ''}</div>` : '';
   const actions = `${halted ? `<button data-act="resume" data-id="${id}"${view.inference ? '' : ' disabled title="推理门禁关闭"'}>恢复制作</button>` : ''}${['queued', 'running'].includes(job.status) ? `<button class="danger" data-act="stop" data-id="${id}">停止制作</button>` : ''}<button class="quiet" data-act="log" data-id="${id}">查看日志</button>`;
@@ -328,6 +421,7 @@ function renderJob(job) {
 /* Only touch cards whose content changed, so a playing video or an opened detail is never reset by polling. */
 function syncJobs(jobs) {
   const root = $('jobs'), keep = new Set();
+  view.jobs = Object.fromEntries(jobs.map(job => [job.job_id, job]));
   jobs.forEach((job, index) => {
     keep.add(job.job_id);
     let card = Array.from(root.children).find(node => node.dataset.job === job.job_id);
@@ -359,6 +453,7 @@ $('jobs').addEventListener('click', async event => {
   if (!button) return;
   const id = button.dataset.id, act = button.dataset.act;
   if (act === 'log') return openLog(id);
+  if (act === 'media') return openMedia(id, button.dataset.shot);
   if (act === 'stop' && !confirm('停止后，正在运行的模型任务会被中断；已完成的步骤会保留，可以之后恢复。确定停止吗？')) return;
   button.disabled = true;
   try { await api('/api/drama/jobs/' + encodeURIComponent(id) + '/' + act, {}); say(act === 'stop' ? '已请求停止任务 ' + id + '。' : '任务 ' + id + ' 已恢复排队。'); await refresh(); }
@@ -377,6 +472,8 @@ async function openLog(id) {
 }
 $('logrefresh').onclick = () => openLog(view.logJob);
 $('logclose').onclick = () => $('logbox').close();
+$('mediaclose').onclick = () => $('mediabox').close();
+$('mediabox').addEventListener('close', () => { $('mediagrid').innerHTML = ''; });
 $('recheck').onclick = event => { event.preventDefault(); $('readycount').textContent = '检查中…'; loadReadiness(); };
 $('ready').querySelector('summary').addEventListener('click', () => { $('ready').dataset.touched = '1'; });
 $('project').onchange = async () => { view.job = ''; history.replaceState(null, '', projectUrl()); say(''); await loadSummary(); refresh(); };

@@ -74,6 +74,12 @@ def load_storyboard(folder, cfg):
     for name, character in characters.items():
         if not isinstance(character, dict) or not isinstance(character.get('anchor', ''), str):
             raise ValueError('角色设定无效：' + name)
+        for key in ('voice', 'gender'):
+            if not isinstance(character.get(key, ''), str):raise ValueError('角色 %s 的 %s 必须是字符串' % (name, key))
+        if character.get('voice_rate') not in (None, ''):
+            try:rate = int(character['voice_rate'])
+            except (TypeError, ValueError):raise ValueError('角色 %s 的 voice_rate 必须是整数' % name)
+            if not 60 <= rate <= 400:raise ValueError('角色 %s 的 voice_rate 应在 60～400 之间' % name)
     seen, rows = set(), []
     for index, raw in enumerate(shots, 1):
         if not isinstance(raw, dict):raise ValueError('每个分镜必须是对象')
@@ -86,7 +92,7 @@ def load_storyboard(folder, cfg):
         s['description'] = s.get('description') or s.get('prompt', '')
         if not isinstance(s['description'], str) or not s['description'].strip():
             raise ValueError(sid + ' 缺少有效 description / prompt')
-        for key in ['character', 'dialogue', 'speaker', 'video_prompt', 'camera', 'motion', 'lighting', 'grade', 'sfx', 'end_frame']:
+        for key in ['character', 'dialogue', 'speaker', 'video_prompt', 'camera', 'motion', 'lighting', 'grade', 'sfx', 'end_frame', 'transition']:
             s[key] = s.get(key, '')
             if not isinstance(s[key], str):raise ValueError(sid + '.' + key + ' 必须是字符串')
         if s['end_frame']:
@@ -135,14 +141,53 @@ def configure(base, preset='preview', overrides=None):
         if video['width'] % 32 or video['height'] % 32:raise ValueError('Animate2 宽高必须为 32 的倍数')
         if video['frames'] < 5 or (video['frames'] - 1) % 4:raise ValueError('Animate2 帧数必须为 4n+1 且至少 5 帧')
     if cfg['quality']['max_retries'] < 0:raise ValueError('重试次数不能为负数')
-    a = overrides.get('audio_settings', {})
-    if a:
-        cfg['voice'].update(enabled=a['voice_enabled'], name=a['voice_name'], rate=a['voice_rate'])
-        cfg['voice']['per_character'] = {'_default': a['voice_name']}
-        cfg['cinema']['voice_map']['_default'] = a['voice_name']
-        cfg['subtitle']['burn_in'] = a['subtitles']
-        cfg['music']['enabled'] = a['music']
+    if overrides.get('audio_settings'):apply_audio_settings(cfg, overrides['audio_settings'])
     return cfg
+
+
+def apply_audio_settings(cfg, settings):
+    """Apply the canvas audio node to a config in place.
+
+    The node's voice is only the fallback for speakers without a cast voice.
+    Earlier versions replaced ``voice.per_character`` with it, which gave every
+    character the same voice.
+    """
+    cfg['voice'].update(enabled=settings['voice_enabled'], name=settings['voice_name'], rate=settings['voice_rate'])
+    per_character = dict(cfg['voice'].get('per_character') or {})
+    per_character['_default'] = settings['voice_name']
+    cfg['voice']['per_character'] = per_character
+    cfg['cinema'].setdefault('voice_map', {})['_default'] = settings['voice_name']
+    cfg['subtitle']['burn_in'] = settings['subtitles']
+    cfg['music']['enabled'] = settings['music']
+    return cfg
+
+
+# Field vocabularies understood by the renderer (render_cinema.py keeps the same lists).
+MOTIONS = ('push_in', 'pull_out', 'pan_left', 'pan_right', 'tilt_up', 'tilt_down', 'handheld', 'lock')
+GRADES = ('cool', 'warm', 'golden', 'noir', 'neutral')
+TRANSITIONS = ('dip', 'dissolve', 'cut', 'flash')
+SFX = ('rain', 'wind', 'waves', 'boat', 'steps', 'clock', 'engine', 'city', 'birds', 'paper', 'energy', 'fire',
+       'impact', 'sword', 'thunder', 'door', 'silence')
+
+
+def sfx_names(value):
+    return [token.split('@')[0].strip().lower() for token in re.split(r'[|,，]', value or '') if token.strip()]
+
+
+def cast_table(shots, characters, cfg):
+    """One row per speaker: the voice and rate every line of theirs will use."""
+    try:from . import voice as voicekit
+    except ImportError:import voice as voicekit  # run as a script from drama/
+    rows = {}
+    for shot in shots:
+        if not shot['dialogue'].strip():continue
+        speaker = shot['speaker'].strip() or (shot['character'].split('|')[0].strip() if shot['character'] else '')
+        if speaker not in rows:
+            name, rate, source = voicekit.cast(speaker, cfg, characters)
+            rows[speaker] = {'speaker': speaker or '（未填 speaker）', 'voice': name, 'rate': rate, 'source': source,
+                             'lines': 0, 'shots': [], 'sample': shot['dialogue'].strip()}
+        rows[speaker]['lines'] += 1;rows[speaker]['shots'].append(shot['shot_id'])
+    return list(rows.values())
 
 
 def storyboard_summary(folder, cfg):
@@ -150,6 +195,11 @@ def storyboard_summary(folder, cfg):
     files = input_payloads(folder)
     board, shots, characters, style = load_storyboard(folder, cfg)
     warnings = []
+    for key, allowed, label in (('motion', MOTIONS, '运镜'), ('grade', GRADES, '色调'), ('transition', TRANSITIONS, '转场')):
+        bad = ['%s=%s' % (s['shot_id'], s[key]) for s in shots if s[key].strip() and s[key].strip().lower() not in allowed]
+        if bad:warnings.append('未识别的%s，将按默认处理：%s（可用：%s）' % (label, '、'.join(bad), '、'.join(allowed)))
+    bad = ['%s=%s' % (s['shot_id'], name) for s in shots for name in sfx_names(s['sfx']) if name not in SFX]
+    if bad:warnings.append('未识别的音效，将静音：%s（可用：%s）' % ('、'.join(bad), '、'.join(SFX)))
     plain = [s['shot_id'] for s in shots if not s['video_prompt'].strip()]
     if plain:warnings.append('未填 video_prompt，动态镜头将沿用首帧描述：' + '、'.join(plain))
     unvoiced = [s['shot_id'] for s in shots if s['dialogue'].strip() and not s['speaker'].strip()]
@@ -163,9 +213,10 @@ def storyboard_summary(folder, cfg):
         'characters': list(characters), 'shot_count': len(shots),
         'duration_sec': round(sum(s['duration_sec'] for s in shots), 2),
         'dialogue_lines': sum(1 for s in shots if s['dialogue'].strip()),
-        'warnings': warnings,
+        'warnings': warnings, 'cast': cast_table(shots, characters, cfg),
         'shots': [{'shot_id': s['shot_id'], 'character': s['character'], 'camera': s['camera'],
                    'duration_sec': s['duration_sec'], 'dialogue': s['dialogue'], 'speaker': s['speaker'],
                    'description': s['description'], 'has_video_prompt': bool(s['video_prompt'].strip()),
-                   'end_frame': s['end_frame'], 'width': s['width'], 'height': s['height']} for s in shots],
+                   'end_frame': s['end_frame'], 'width': s['width'], 'height': s['height'],
+                   'motion': s['motion'], 'grade': s['grade'], 'sfx': s['sfx'], 'transition': s['transition']} for s in shots],
     }

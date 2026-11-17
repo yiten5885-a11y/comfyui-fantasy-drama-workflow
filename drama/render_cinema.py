@@ -35,6 +35,11 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+if __package__:
+    from . import voice as voicekit
+else:
+    sys.path.insert(0, ROOT)
+    import voice as voicekit
 DEFAULT_CONFIG = os.path.join(ROOT, "drama_config.json")
 AAC_FRAME = 1024
 _FONT_CACHE = {}
@@ -69,30 +74,10 @@ TINTS = {
     "neutral": (0.0, 0.0, 0.0),
 }
 
-MALE_HINT = ("先生", "哥", "叔", "伯", "父", "爷", "陆屿", "男", "老板", "船老大")
-ELDER_HINT = ("老", "爷", "婆", "奶", "船老大", "父", "母")
-
-# macOS Sonoma+ 的新版中文语音必须用「完整名称（带语言后缀）」调用 say，
-# 只写短名会生成 0.01 秒的空音频且不报错。这里统一做一次补全。
-VOICE_FULL = {
-    "Tingting": "Tingting (中文（中国大陆）)",
-    "Reed": "Reed (中文（中国大陆）)",
-    "Eddy": "Eddy (中文（中国大陆）)",
-    "Rocko": "Rocko (中文（中国大陆）)",
-    "Grandpa": "Grandpa (中文（中国大陆）)",
-    "Grandma": "Grandma (中文（中国大陆）)",
-    "Flo": "Flo (中文（中国大陆）)",
-    "Shelley": "Shelley (中文（中国大陆）)",
-    "Sandy": "Sandy (中文（中国大陆）)",
-    "Meijia": "Meijia (中文（台湾）)",
-    "Sinji": "Sinji (中文（香港）)",
-}
-SAFE_VOICE = "Tingting (中文（中国大陆）)"
-
-
-def norm_voice(name):
-    name = (name or "").strip()
-    return VOICE_FULL.get(name, name) or SAFE_VOICE
+# 角色选声、语音全名补全、配音引擎都在 voice.py，渲染器只负责音频后处理。
+VOICE_FULL = voicekit.VOICE_FULL
+SAFE_VOICE = voicekit.SAFE_VOICE
+norm_voice = voicekit.norm_voice
 
 
 # ---------------------------------------------------------------- 配置 / IO
@@ -123,9 +108,11 @@ def find_image(images_dir, shot_id):
 
 
 def srt_time(sec):
-    h, m = int(sec // 3600), int((sec % 3600) // 60)
-    s = int(sec % 60)
-    return "%02d:%02d:%02d,%03d" % (h, m, s, int((sec - int(sec)) * 1000))
+    ms = int(round(max(0.0, sec) * 1000))
+    h, ms = divmod(ms, 3600000)
+    m, ms = divmod(ms, 60000)
+    s, ms = divmod(ms, 1000)
+    return "%02d:%02d:%02d,%03d" % (h, m, s, ms)
 
 
 def write_srt(entries, path):
@@ -134,6 +121,60 @@ def write_srt(entries, path):
         lines += [str(i), "%s --> %s" % (srt_time(start), srt_time(end)), text, ""]
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
+
+
+BREAKS = "，。！？；：…,.!?;:"
+STOPS = "。！？；…!?;"
+TRAILING = "，。、；：,.;:"
+
+
+def split_phrases(text, limit):
+    """把一句台词切成适合逐段显示的短句；不足 limit 字的整句不切。"""
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return [text] if text else []
+    parts, buf = [], ""
+    for ch in text:
+        buf += ch
+        if ch in BREAKS:
+            parts.append(buf)
+            buf = ""
+    if buf:
+        parts.append(buf)
+    merged = []
+    for part in parts:
+        visible = len(part.strip(BREAKS + " "))
+        if merged and (visible < 4 or len(merged[-1].strip(BREAKS)) < 4) and len(merged[-1]) + len(part) <= limit * 2:
+            merged[-1] += part
+        else:
+            merged.append(part)
+    return [part.strip() for part in merged if part.strip(BREAKS + " ")]
+
+
+def _weight(phrase):
+    """字数 + 标点停顿，用来按语速分配每段字幕的时长。"""
+    visible = sum(1 for ch in phrase if ch not in BREAKS and not ch.isspace())
+    pause = sum(0.9 if ch in STOPS else 0.45 for ch in phrase if ch in BREAKS)
+    return max(1.0, visible + pause)
+
+
+def subtitle_cues(text, start, end, limit=15):
+    """[(开始秒, 结束秒, 文字)]：长台词按标点切段，时长按字数比例分给配音窗口。
+
+    中文字幕习惯：段尾的逗号、句号省略，问号和感叹号保留。
+    """
+    phrases = split_phrases(text, limit)
+    if not phrases or end <= start:
+        return []
+    weights = [_weight(p) for p in phrases]
+    total = sum(weights)
+    cues, at = [], start
+    for phrase, weight in zip(phrases, weights):
+        span = (end - start) * weight / total
+        shown = phrase.rstrip(TRAILING) or phrase
+        cues.append((at, at + span, shown))
+        at += span
+    return cues
 
 
 def get_font(path, index, size):
@@ -381,25 +422,64 @@ def decode_audio(path, sr):
     return np.ascontiguousarray(data.astype(np.float32))
 
 
+def write_wav(path, audio, sr):
+    """(2, n) 或 (n,) 浮点音频写成 16 位 WAV，供页面试听。"""
+    import wave
+    data = np.atleast_2d(np.asarray(audio, dtype=np.float32))
+    if data.shape[0] == 1:
+        data = np.vstack([data, data])
+    pcm = (np.clip(data[:2].T, -1, 1) * 32767).astype("<i2")
+    with wave.open(path, "wb") as handle:
+        handle.setnchannels(2)
+        handle.setsampwidth(2)
+        handle.setframerate(int(sr))
+        handle.writeframes(pcm.tobytes())
+    return path
+
+
 def pick_voice(speaker, cfg, characters):
-    vcfg = cfg["voice"]
-    vmap = (vcfg.get("per_character") or {}) or cfg["cinema"].get("voice_map", {})
-    name = (speaker or "").strip()
-    if name in vmap:
-        return norm_voice(vmap[name])
-    info = (characters.get(name) or {})
-    anchor = info.get("anchor", "")
-    if any(k in name for k in ELDER_HINT) or "50岁" in anchor or "60岁" in anchor:
-        return norm_voice(vmap.get("_elder", "Grandpa"))
-    if any(k in name for k in MALE_HINT) or "先生" in anchor:
-        return norm_voice(vmap.get("_male", "Reed"))
-    return norm_voice(vmap.get("_default", vcfg.get("name", "Tingting")))
+    return voicekit.cast(speaker, cfg, characters)[0]
+
+
+def _db(value):
+    return 10 ** (value / 20.0)
+
+
+def polish_voice(audio, sr, vcfg):
+    """去掉首尾静音、统一响度、两端做短淡入淡出，避免爆音和字幕对不上口。"""
+    if audio.size == 0:
+        return audio
+    mono = np.abs(audio).max(axis=0)
+    hop = max(1, int(0.01 * sr))
+    frames = mono[:mono.size // hop * hop].reshape(-1, hop).max(axis=1) if mono.size >= hop else mono
+    floor = float(np.max(frames)) * _db(float(vcfg.get("trim_db", -42)))
+    loud = np.nonzero(frames > floor)[0]
+    if vcfg.get("trim_silence", True) and loud.size:
+        pad = int(float(vcfg.get("trim_pad_sec", 0.04)) * sr)
+        a = max(0, loud[0] * hop - pad)
+        b = min(audio.shape[1], (loud[-1] + 1) * hop + pad)
+        audio = audio[:, a:b]
+    rms = float(np.sqrt(np.mean(np.square(audio)))) if audio.size else 0.0
+    if vcfg.get("normalize", True) and rms > 1e-5:
+        gain = _db(float(vcfg.get("target_rms_db", -20))) / rms
+        gain = min(gain, _db(float(vcfg.get("peak_db", -1.5))) / max(float(np.abs(audio).max()), 1e-6))
+        audio = audio * float(np.clip(gain, 0.2, 8.0))
+    edge = min(int(0.008 * sr), audio.shape[1] // 2)
+    if edge:
+        ramp = np.linspace(0, 1, edge, dtype=np.float32)
+        audio = audio.copy()
+        audio[:, :edge] *= ramp
+        audio[:, -edge:] *= ramp[::-1]
+    return np.ascontiguousarray(audio.astype(np.float32))
 
 
 def make_voice(shots, out_dir, cfg, sr, characters):
+    """逐句配音：[(序号, 文件, 音频, 时长, 音色)]；没有台词或关闭配音时音频为 None。"""
     vcfg = cfg["voice"]
     vdir = os.path.join(out_dir, "voice")
     os.makedirs(vdir, exist_ok=True)
+    engine = voicekit.engine_name(cfg)
+    suffix = voicekit.output_suffix(cfg)
     made = []
     for i, s in enumerate(shots, 1):
         text = (s.get("dialogue") or "").strip()
@@ -407,37 +487,64 @@ def make_voice(shots, out_dir, cfg, sr, characters):
             made.append((i, None, None, 0.0, ""))
             continue
         speaker = (s.get("speaker") or "").strip()
-        voice = pick_voice(speaker, cfg, characters)
-        rate = int(vcfg.get("rate", 170))
-        if "_elder" in speaker or "老" in speaker:
-            rate = int(rate * 0.88)
-        slug = "".join(ch for ch in voice.split("(")[0].strip()
-                       if ch.isalnum() or ch in "-_") or "voice"
-        dst = os.path.join(vdir, "line%02d_%s.aiff" % (i, slug))
+        voice, rate, _source = voicekit.cast(speaker, cfg, characters)
+        slug = "".join(ch for ch in voice.split("(")[0].strip() if ch.isalnum() or ch in "-_") or "voice"
+        dst = os.path.join(vdir, "line%02d_%s%s" % (i, slug, suffix))
         try:
-            def synth(v, path):
-                subprocess.run(["say", "-v", v, "-r", str(rate), "-o", path, text],
-                               check=True, capture_output=True,
-                               timeout=vcfg.get("timeout_sec", 60))
-                return decode_audio(path, sr)
+            def synth(v):
+                voicekit.synthesize(cfg, v, rate, text, dst)
+                return polish_voice(decode_audio(dst, sr), sr, vcfg)
 
-            audio = synth(voice, dst)
+            audio = synth(voice)
             dur = audio.shape[1] / sr
             # 某些语音包未下载/短名失效时会返回 0.01 秒静音，必须兜底重合成
-            if dur < 0.35 or float(np.abs(audio).max()) < 1e-4:
-                print("  [提示] %s 返回空音频（%.2fs），自动回退 %s" %
-                      (voice, dur, SAFE_VOICE), flush=True)
+            if engine == "say" and (dur < 0.35 or float(np.abs(audio).max()) < 1e-4) and voice != SAFE_VOICE:
+                print("  [提示] %s 返回空音频（%.2fs），自动回退 %s" % (voice, dur, SAFE_VOICE), flush=True)
                 voice = SAFE_VOICE
-                audio = synth(voice, dst)
+                audio = synth(voice)
                 dur = audio.shape[1] / sr
-            if dur < 0.35 or float(np.abs(audio).max()) < 1e-4:
-                raise RuntimeError("配音重试后仍为空")
+            if dur < 0.2 or float(np.abs(audio).max()) < 1e-4:
+                raise RuntimeError("配音为空，请确认语音「%s」已安装" % voice)
             made.append((i, dst, audio, dur, voice))
-            print("  [配音] %02d  %-9s %.1fs  %s" %
-                  (i, slug, dur, text[:24]), flush=True)
+            print("  [配音] %02d  %-9s %.1fs  %s" % (i, slug, dur, text[:24]), flush=True)
         except Exception as e:
             raise RuntimeError("配音失败（%s）：%s" % (text[:16], e)) from e
     return made
+
+
+def plan_timeline(shots, voices, cfg, image_for):
+    """分镜时长与配音对齐后的时间轴。
+
+    返回 (timeline, total)。timeline 每项为
+    (分镜, 起点秒, 时长, 关键帧, 运镜, 台词, 配音起点, 配音终点)，后两者相对镜头起点。
+    镜头至少容纳整句配音；字幕窗口与修剪过静音的配音严格对齐。
+    """
+    c = cfg["cinema"]
+    lead = float(cfg["voice"].get("lead_in_sec", 0.2))
+    tail = float(c.get("voice_tail_sec", 0.5))
+    cursor = float(c.get("intro_sec", 0.5))
+    timeline = []
+    for shot, line in zip(shots, voices):
+        voice_dur = float(line[3] or 0.0)
+        try:
+            planned = float(shot.get("duration_sec") or 0)
+        except (TypeError, ValueError):
+            planned = 0.0
+        dur = max(planned, float(c.get("min_shot_sec", 2.0)), voice_dur + lead + tail if voice_dur else 0.0)
+        dialogue = (shot.get("dialogue") or "").strip()
+        vstart, vend = (lead, min(dur, lead + voice_dur + 0.25)) if voice_dur else (0.0, dur)
+        timeline.append((shot, cursor, dur, image_for(shot), (shot.get("motion") or "lock").strip(),
+                         dialogue, vstart, vend))
+        cursor += dur
+    return timeline, cursor + float(c.get("outro_sec", 0.35))
+
+
+def timeline_cues(timeline, subcfg):
+    limit = int(subcfg.get("max_chars_per_line", 15))
+    cues = []
+    for _shot, at, _dur, _img, _motion, text, vstart, vend in timeline:
+        cues += [(at + a, at + b, t) for a, b, t in subtitle_cues(text, vstart, vend, limit)]
+    return cues
 
 
 # ---------------------------------------------------------------- 音频：环境音效
@@ -511,6 +618,41 @@ def synth_sfx(kind, n, sr, seed=7):
         x = 0.20 * _env(n, sr, 0.012, seed) * (
             0.4 + 0.6 * (rng.random(n) > 0.5).astype(np.float32))
         x *= (0.5 + 0.5 * np.sin(2 * np.pi * 1.7 * t))
+    elif kind == "energy":
+        hum = (0.16 * np.sin(2 * np.pi * 110 * t) + 0.08 * np.sin(2 * np.pi * 165 * t)).astype(np.float32)
+        hum *= (0.75 + 0.25 * np.sin(2 * np.pi * 0.9 * t)).astype(np.float32)
+        x = hum + 0.05 * _env(n, sr, 0.0008, seed)
+        for st in range(int(0.1 * sr), n, int(0.23 * sr)):
+            L = min(int(0.12 * sr), n - st)
+            fq = 3200 + 2600 * rng.random()
+            x[st:st + L] += (0.05 * np.sin(2 * np.pi * fq * t[:L]) * np.exp(-28 * t[:L])).astype(np.float32)
+    elif kind == "fire":
+        x = 0.16 * _env(n, sr, 0.003, seed) * (0.8 + 0.2 * np.sin(2 * np.pi * 0.4 * t)).astype(np.float32)
+        pops = np.nonzero(rng.random(n) > 0.99965)[0]
+        for st in pops:
+            L = min(int(0.012 * sr), n - st)
+            x[st:st + L] += (rng.standard_normal(L) * np.exp(-400 * t[:L]) * 0.25).astype(np.float32)
+    elif kind == "impact":
+        sweep = 2 * np.pi * np.cumsum(45 + 75 * np.exp(-9 * t)) / sr
+        boom = np.sin(sweep).astype(np.float32) * np.exp(-4.2 * t).astype(np.float32)
+        crack = white * np.exp(-60 * t).astype(np.float32)
+        x = 0.85 * boom + 0.35 * crack + 0.12 * _env(n, sr, 0.004, seed) * np.exp(-6 * t)
+        return np.clip(x, -1, 1).astype(np.float32)
+    elif kind == "sword":
+        swoosh_len = min(n, int(0.32 * sr))
+        bell = np.sin(np.pi * np.arange(swoosh_len, dtype=np.float32) / max(swoosh_len, 1)) ** 2
+        hiss = (white[:swoosh_len] - _env(swoosh_len, sr, 0.0004, seed) * 4).astype(np.float32)
+        x = np.zeros(n, np.float32)
+        x[:swoosh_len] = 0.22 * hiss * bell
+        ring_t = np.clip(t - 0.26, 0, None)
+        ring = sum(a * np.sin(2 * np.pi * fq * ring_t) for a, fq in ((0.22, 2210), (0.14, 3170), (0.08, 4730)))
+        x += (ring * np.exp(-3.2 * ring_t) * (t >= 0.26)).astype(np.float32)
+        return np.clip(x, -1, 1).astype(np.float32)
+    elif kind == "thunder":
+        crack = white * np.exp(-22 * t).astype(np.float32)
+        rumble = _env(n, sr, 0.006, seed) * 6 * np.exp(-1.1 * t).astype(np.float32)
+        x = 0.4 * crack + 0.5 * np.clip(rumble, -1, 1)
+        return np.clip(x, -1, 1).astype(np.float32)
     else:
         return np.zeros(n, np.float32)
     f = min(int(0.22 * sr), n // 2)
@@ -518,6 +660,42 @@ def synth_sfx(kind, n, sr, seed=7):
         x[:f] *= np.linspace(0, 1, f, dtype=np.float32)
         x[-f:] *= np.linspace(1, 0, f, dtype=np.float32)
     return np.clip(x, -1, 1).astype(np.float32)
+
+
+AMBIENT_SFX = ("rain", "wind", "waves", "boat", "steps", "clock", "engine", "city",
+               "birds", "paper", "energy", "fire")
+ONESHOT_SFX = {"impact": 1.6, "sword": 1.4, "thunder": 3.2, "door": 1.2}
+SFX_NAMES = AMBIENT_SFX + tuple(ONESHOT_SFX) + ("silence",)
+
+
+def parse_sfx(value):
+    """"wind|impact@1.2" -> [("wind", None), ("impact", 1.2)]；未知名称原样返回，由调用方提示。"""
+    events = []
+    for token in str(value or "").replace("，", "|").replace(",", "|").split("|"):
+        token = token.strip().lower()
+        if not token or token == "silence":
+            continue
+        name, _, at = token.partition("@")
+        try:
+            events.append((name.strip(), float(at) if at else None))
+        except ValueError:
+            events.append((name.strip(), None))
+    return events
+
+
+def shot_sfx(value, dur, sr, seed):
+    """一个镜头的音效轨：环境声铺满整镜；一次性音效默认落在镜头 35% 处，可用 @秒 指定。"""
+    n = int(dur * sr)
+    track = np.zeros(n, np.float32)
+    for k, (name, at) in enumerate(parse_sfx(value)):
+        if name in ONESHOT_SFX:
+            start = int(min(max(0.0, at if at is not None else dur * 0.35), max(0.0, dur - 0.05)) * sr)
+            seg = synth_sfx(name, int(ONESHOT_SFX[name] * sr), sr, seed=seed + k)
+            end = min(n, start + seg.size)
+            track[start:end] += seg[:end - start]
+        elif name in AMBIENT_SFX:
+            track += synth_sfx(name, n, sr, seed=seed + k)
+    return track
 
 
 # ---------------------------------------------------------------- 音频：配乐
@@ -535,9 +713,70 @@ CHORD_SETS = {
 }
 
 
-def synth_music(total_sec, sr, mcfg, grade):
-    """三层次氛围配乐：和弦垫 + 低音 + 稀疏琶音 + 简易空间感。"""
+# 五声音阶（宫商角徵羽）。各色调用不同调式：冷色偏羽调，暖色偏宫调。
+PENTATONIC = {
+    "neutral": (146.83, [0, 2, 4, 7, 9]),   # D 宫
+    "warm": (146.83, [0, 2, 4, 7, 9]),
+    "golden": (164.81, [0, 2, 4, 7, 9]),    # E 宫
+    "cool": (123.47, [0, 3, 5, 7, 10]),     # B 羽
+    "noir": (110.0, [0, 3, 5, 7, 10]),      # A 羽
+}
+
+
+def _pluck(fq, L, sr, decay=3.2):
+    """拨弦音色：带轻微非谐泛音和起音滑音，近似古筝。"""
+    tt = np.arange(L, dtype=np.float32) / sr
+    bend = 1.0 + 0.012 * np.exp(-30 * tt)
+    phase = 2 * np.pi * fq * np.cumsum(bend) / sr
+    tone = np.zeros(L, np.float32)
+    for k, (amp, ratio) in enumerate(((1.0, 1.0), (0.45, 2.0), (0.22, 3.01), (0.1, 4.03))):
+        tone += (amp * np.sin(phase * ratio) * np.exp(-decay * (1 + 0.6 * k) * tt)).astype(np.float32)
+    attack = min(L, int(0.004 * sr))
+    if attack:
+        tone[:attack] *= np.linspace(0, 1, attack, dtype=np.float32)
+    return tone
+
+
+def synth_guofeng(total_sec, sr, mcfg, grade):
+    """国风配乐：五度持续低音 + 五声音阶拨弦旋律 + 空间延迟。"""
     b = mcfg.get("builtin") or {}
+    root, steps = PENTATONIC.get(grade, PENTATONIC["neutral"])
+    n = int(total_sec * sr) + sr
+    t = np.arange(n, dtype=np.float32) / sr
+    drone = (0.20 * np.sin(2 * np.pi * root / 2 * t) + 0.12 * np.sin(2 * np.pi * root * 0.75 * t)).astype(np.float32)
+    drone *= (0.8 + 0.2 * np.sin(2 * np.pi * 0.07 * t)).astype(np.float32)
+    melody = np.zeros(n, np.float32)
+    rng = np.random.default_rng(int(b.get("seed", 8)))
+    beat = float(b.get("beat_sec", 0.55))
+    degree, at = 2, 0.6
+    scale = [root * 2 ** (s / 12.0) for s in steps] + [root * 2 * 2 ** (s / 12.0) for s in steps]
+    while at < total_sec - 0.6:
+        degree = int(np.clip(degree + rng.choice([-2, -1, -1, 1, 1, 2]), 0, len(scale) - 1))
+        start = int(at * sr)
+        L = min(int(2.2 * sr), n - start)
+        melody[start:start + L] += 0.22 * _pluck(scale[degree], L, sr)
+        at += beat * rng.choice([1, 1, 1, 2, 2, 3])
+    mono = drone + melody
+    d1, d2 = int(0.17 * sr), int(0.29 * sr)
+    wet = np.zeros(n, np.float32)
+    wet[d1:] += 0.28 * mono[:-d1]
+    wet[d2:] += 0.16 * mono[:-d2]
+    left = mono + 0.6 * wet
+    right = np.concatenate([np.zeros(int(0.011 * sr), np.float32), mono])[:n] + 0.8 * wet
+    f = min(int(float(mcfg.get("fade_sec", 1.5)) * sr), n // 2)
+    if f:
+        ramp = np.linspace(0, 1, f, dtype=np.float32)
+        for ch in (left, right):
+            ch[:f] *= ramp
+            ch[-f:] *= ramp[::-1]
+    return np.vstack([left, right])
+
+
+def synth_music(total_sec, sr, mcfg, grade):
+    """内置配乐。builtin.style 为 guofeng 时用五声音阶拨弦，否则为氛围和弦垫。"""
+    b = mcfg.get("builtin") or {}
+    if b.get("style") == "guofeng":
+        return synth_guofeng(total_sec, sr, mcfg, grade)
     chords = CHORD_SETS.get(grade, CHORD_SETS["neutral"])
     n = int(total_sec * sr) + sr
     pad = np.zeros(n, np.float32)
@@ -607,33 +846,53 @@ def load_music(total_sec, sr, mcfg, grade):
     return synth_music(total_sec, sr, mcfg, grade) * float(mcfg.get("gain", 0.16))
 
 
+def duck_envelope(mask, sr, depth, attack=0.06, release=0.45, lookahead=0.18, rate=200):
+    """闪避增益：人声开始前 lookahead 秒提前压低，平滑起落，避免抽吸感。"""
+    n = mask.size
+    hop = max(1, sr // rate)
+    blocks = int(np.ceil(n / hop))
+    padded = np.zeros(blocks * hop, np.float32)
+    padded[:n] = mask
+    ctrl = padded.reshape(blocks, hop).max(axis=1)
+    ahead = int(lookahead * rate)
+    if ahead:
+        ctrl = np.maximum(ctrl, np.concatenate([ctrl[ahead:], np.zeros(ahead, np.float32)]))
+    a = 1.0 - np.exp(-1.0 / max(1.0, attack * rate))
+    r = 1.0 - np.exp(-1.0 / max(1.0, release * rate))
+    env = np.empty(blocks, np.float32)
+    level = 0.0
+    for i, target in enumerate(ctrl):
+        level += (target - level) * (a if target > level else r)
+        env[i] = level
+    smooth = np.interp(np.arange(n, dtype=np.float32) / hop, np.arange(blocks, dtype=np.float32), env).astype(np.float32)
+    return 1.0 - (1.0 - depth) * np.clip(smooth, 0, 1)
+
+
 def build_audio(voices, timeline, total_sec, sr, cfg, grade):
     n = int(total_sec * sr)
     voice_track = np.zeros((2, n + sr), np.float32)
     sfx_track = np.zeros(n + sr, np.float32)
     mask = np.zeros(n + sr, np.float32)
     vcfg, mcfg, c = cfg["voice"], cfg["music"], cfg["cinema"]
-    lead = float(vcfg.get("lead_in_sec", 0.2))
 
-    for (idx, _p, audio, _dur, _voice), tl in zip(voices, timeline):
-        _shot, start, dur, _img, _motion, _text, _vstart, _vend = tl
+    for (_idx, _p, audio, _dur, _voice), tl in zip(voices, timeline):
+        _shot, start, _dur, _img, _motion, _text, vstart, _vend = tl
         if audio is None:
             continue
-        at = int((start + lead) * sr)
+        at = int((start + vstart) * sr)
         L = min(audio.shape[1], max(0, voice_track.shape[1] - at))
         if L > 0:
             voice_track[:, at:at + L] += audio[:, :L] * float(vcfg.get("gain", 1.0))
             mask[at:at + L] = 1.0
 
     if c.get("sfx_enabled", True):
-        for i, tl in enumerate(timeline, 1):
-            _shot, start, dur, _img, _motion, _text, _vstart, _vend = tl
-            kind = (timeline[i - 1][0].get("sfx") or "silence").strip().lower()
-            L = int(dur * sr)
+        for i, (shot, start, dur, *_rest) in enumerate(timeline, 1):
+            seg = shot_sfx(shot.get("sfx"), dur, sr, seed=100 + i * 10)
             at = int(start * sr)
-            seg = synth_sfx(kind, L, sr, seed=100 + i)
-            end = min(sfx_track.size, at + L)
+            end = min(sfx_track.size, at + seg.size)
             sfx_track[at:end] += seg[:end - at] * float(c.get("sfx_gain", 0.26))
+        # 台词出现时音效也让开一些，人声更清楚
+        sfx_track[:n] *= duck_envelope(mask[:n], sr, float(c.get("sfx_duck_under_voice", 0.7)))
 
     voice_track = voice_track[:, :n]
     sfx2 = np.vstack([sfx_track[:n] * 0.94,
@@ -645,11 +904,9 @@ def build_audio(voices, timeline, total_sec, sr, cfg, grade):
         bgm = load_music(total_sec, sr, mcfg, grade)
         bgm = bgm[:, :n] if bgm.shape[1] >= n else np.pad(
             bgm, ((0, 0), (0, n - bgm.shape[1])))
-        duck = float(mcfg.get("duck_under_voice", 0.42))
-        win = int(0.05 * sr)
-        smooth = np.convolve(mask[:n], np.ones(win, np.float32) / win,
-                             mode="same") if win else mask[:n]
-        bgm *= (1.0 - (1.0 - duck) * np.clip(smooth, 0, 1))
+        bgm = bgm * duck_envelope(mask[:n], sr, float(mcfg.get("duck_under_voice", 0.42)),
+                                  attack=float(mcfg.get("duck_attack_sec", 0.06)),
+                                  release=float(mcfg.get("duck_release_sec", 0.45)))
         mix = mix + bgm
 
     # 软限幅（tanh）比硬归一化更不容易把人声压扁
@@ -663,6 +920,80 @@ def build_audio(voices, timeline, total_sec, sr, cfg, grade):
         mix[:, :f] *= np.linspace(0, 1, f, dtype=np.float32)
         mix[:, -f:] *= np.linspace(1, 0, f, dtype=np.float32)
     return np.ascontiguousarray(mix.astype(np.float32))
+
+
+# ---------------------------------------------------------------- 画面：动态镜头与转场
+TRANSITIONS = ("dip", "dissolve", "cut", "flash")
+
+
+def shot_grade_of(shot, default):
+    grade = (shot.get("grade") or "").strip().lower()
+    return grade if grade in TINTS else default
+
+
+def shot_transition_of(shot, c):
+    kind = (shot.get("transition") or c.get("transition") or "dip").strip().lower()
+    return kind if kind in TRANSITIONS else "dip"
+
+
+def load_clip(path):
+    with av.open(path) as clip:
+        stream = clip.streams.video[0]
+        rate = float(stream.average_rate or stream.guessed_rate or 24)
+        frames = [vf.to_image() for vf in clip.decode(video=0)]
+    return frames, rate
+
+
+def clip_positions(count, clip_fps, n, fps, max_slowdown=1.5):
+    """每个输出帧对应的源帧位置（可为小数）。
+
+    片源长于镜头：均匀加速，完整保留动作。片源短于镜头：按需放慢，但最多放慢
+    max_slowdown 倍，剩余时间由调用方用最后一帧缓推补足；不再把 17 帧硬拉成整镜。
+    """
+    if count < 2 or n < 1:
+        return [0.0] * n
+    clip_sec, shot_sec = count / clip_fps, n / fps
+    if clip_sec >= shot_sec:
+        return [k * (count - 1) / max(1, n - 1) for k in range(n)]
+    speed = max(clip_sec / shot_sec, 1.0 / max(1.0, max_slowdown))
+    step = speed * clip_fps / fps
+    played = min(n, int(math.floor((count - 1) / step)) + 1)
+    return [min(count - 1.0, k * step) for k in range(played)]
+
+
+def clip_frame_at(frames, position):
+    """小数位置在相邻两帧之间做线性混合，慢放时画面连续，不再一帧重复多次。"""
+    i = int(position)
+    frac = position - i
+    if frac < 0.02 or i + 1 >= len(frames):
+        return frames[min(i, len(frames) - 1)]
+    if frac > 0.98:
+        return frames[i + 1]
+    return Image.blend(frames[i], frames[i + 1], frac)
+
+
+def fit_frame(frame, W, H, sharpen=0.6):
+    """居中裁切放大到交付尺寸；明显放大时加轻度 USM 锐化，补回放大损失的边缘。"""
+    scale = max(W / frame.width, H / frame.height)
+    out = ImageOps.fit(frame, (W, H), method=Image.LANCZOS)
+    if sharpen > 0 and scale > 1.15:
+        out = out.filter(ImageFilter.UnsharpMask(radius=1.6, percent=int(100 * sharpen), threshold=2))
+    return out
+
+
+def apply_transition(kind, previous, frame, a, black, white, first=False):
+    """a 从 0 到 1。dip 暗场溶解；dissolve 直接溶解；cut 硬切；flash 白闪，适合打击镜头。"""
+    if previous is None:
+        return Image.blend(black, frame, a) if first else frame
+    if kind == "cut":
+        return frame
+    if kind == "flash":
+        return Image.blend(white, frame, a ** 0.7)
+    mixed = Image.blend(previous, frame, a)
+    if kind == "dissolve":
+        return mixed
+    # 暗场溶解：在过渡中点把画面压暗，避免构图差异大的两帧叠成「鬼影」
+    return Image.blend(black, mixed, max(0.05, 1.0 - 0.85 * math.sin(math.pi * a)))
 
 
 # ---------------------------------------------------------------- 编码
@@ -733,54 +1064,58 @@ def encode(out_path, timeline, intro_frames, outro_frames, intro_img, outro_img,
         # 否则剧名/logline 会以半透明残影压在正片上，像水印。
         last_frame = None
 
+    white = Image.new("RGB", (W, H), (255, 252, 240))
+    limit = int(subcfg.get("max_chars_per_line", 15))
     for si, (shot, start, dur, img_path, motion, dialogue, vstart, vend) in enumerate(timeline):
         n = max(1, int(round(dur * fps)))
         base = Image.open(img_path).convert("RGB") if img_path else None
-        clip_frames = []
+        shot_grade = shot_grade_of(shot, grade)
+        transition = shot_transition_of(shot, c)
+        clip_frames, positions, hold_base = [], [], None
         if cfg.get("_videos_dir"):
             clip_path = os.path.join(cfg["_videos_dir"], shot["shot_id"] + ".mp4")
-            with av.open(clip_path) as clip:
-                clip_frames = [vf.to_image() for vf in clip.decode(video=0)]
+            clip_frames, clip_fps = load_clip(clip_path)
             if len(clip_frames) < 2:
                 raise RuntimeError("动态镜头缺帧：" + clip_path)
+            positions = clip_positions(len(clip_frames), clip_fps, n, fps, float(c.get("max_clip_slowdown", 1.5)))
+        cues = subtitle_cues(dialogue, vstart, vend, limit) if sub_on else []
+        hold_cfg = dict(c, zoom=float(c.get("hold_push_in", 0.045)), handheld_px=0)
+        clean = None
         for k in range(n):
             t_sec = k / fps
             if base is not None:
-                if clip_frames:
-                    f = ImageOps.fit(clip_frames[min(len(clip_frames) - 1, k * len(clip_frames) // n)], (W, H), method=Image.LANCZOS)
+                if clip_frames and k < len(positions):
+                    f = fit_frame(clip_frame_at(clip_frames, positions[k]), W, H, float(c.get("sharpen", 0.6)))
+                    hold_base = f
+                elif clip_frames:
+                    # 片源比镜头短：停在最后一帧并缓慢推近，避免冻结画面
+                    f = camera_frame(hold_base, k - len(positions), n - len(positions), "push_in", W, H, hold_cfg, step)
                 else:
                     f = camera_frame(base, k, n, motion, W, H, c, step)
-                f = kit.apply(f, grade, step=step)
+                f = kit.apply(f, shot_grade, step=step)
             else:
                 f = Image.new("RGB", (W, H), (12, 15, 21))
             if letterbox > 0:
                 dl = ImageDraw.Draw(f)
                 dl.rectangle((0, 0, W, letterbox), fill=(0, 0, 0))
                 dl.rectangle((0, H - letterbox, W, H), fill=(0, 0, 0))
-            # 暗场溶解：两镜交叉淡化，同时在过渡中点把画面压暗，
-            # 避免构图差异大的两帧半透明叠加成「鬼影 / 双重曝光」。
             if k < trans_n:
-                a = (k + 1) / trans_n
-                if last_frame is not None:
-                    f = Image.blend(last_frame, f, a)
-                    dip = 1.0 - 0.85 * math.sin(math.pi * a)
-                    f = Image.blend(black, f, max(0.05, dip))
-                elif si == 0:
-                    f = Image.blend(black, f, a)
-            # 字幕：按配音窗口显示并逐句淡入淡出
-            if sub_on and dialogue:
-                if vend > vstart:
-                    win_a = min(1.0, max(0.0, (t_sec - vstart) / fade_sub),
-                                max(0.0, (vend - t_sec) / fade_sub))
-                else:
-                    win_a = 1.0
-                f = draw_subtitle(f, dialogue, subcfg, W, H, win_a)
+                f = apply_transition(transition, last_frame, f, (k + 1) / trans_n, black, white, first=si == 0)
+            clean = f
+            # 字幕：长台词逐段显示；只在整句首尾淡入淡出，段与段之间直接切换
+            for j, (a, b, text) in enumerate(cues):
+                if a <= t_sec < b:
+                    fade_in = 1.0 if j else max(0.0, (t_sec - a) / fade_sub)
+                    fade_out = 1.0 if j < len(cues) - 1 else max(0.0, (b - t_sec) / fade_sub)
+                    f = draw_subtitle(f, text, subcfg, W, H, min(1.0, fade_in, fade_out))
+                    break
             push_video(f)
-        last_frame = f if base is not None else None
-        print("  [镜头] %s  %.1fs  %3d 帧  %-10s %s%s" %
-              (shot["shot_id"], dur, n, motion,
+        # 转场只用不带字幕的画面，避免上一镜字幕以残影带进下一镜
+        last_frame = clean if base is not None else None
+        print("  [镜头] %s  %.1fs  %3d 帧  %-10s %s %s%s" %
+              (shot["shot_id"], dur, n, motion, transition,
                "音效:" + (shot.get("sfx") or "—"),
-               "  字幕" if (sub_on and dialogue) else ""), flush=True)
+               "  字幕 %d 段" % len(cues) if cues else ""), flush=True)
 
     # 片尾：从最后一帧溶解到落幕卡
     if outro_frames:
@@ -868,36 +1203,14 @@ def main():
     intro = float(c.get("intro_sec", 2.6))
     outro = float(c.get("outro_sec", 2.2))
     intro_frames, outro_frames = int(round(intro * fps)), int(round(outro * fps))
-    cursor = intro
-    timeline, missing = [], []
-    for i, s in enumerate(shots):
-        try:
-            dur = float(s.get("duration_sec") or c.get("min_shot_sec", 2.0))
-        except ValueError:
-            dur = float(c.get("min_shot_sec", 2.0))
-        voice_dur = voices[i][3]
-        lead = float(cfg["voice"].get("lead_in_sec", 0.2))
-        if voice_dur:
-            dur = max(dur, voice_dur + lead + float(c.get("voice_tail_sec", 0.9)))
-        dur = max(float(c.get("min_shot_sec", 2.0)), min(15.0, dur))
-        dialogue = (s.get("dialogue") or "").strip()
-        vstart = lead + 0.12
-        vend = (voice_dur + lead + 0.45) if voice_dur else dur
-        img = find_image(args.images, s["shot_id"])
-        if not img:
-            missing.append(s["shot_id"])
-        timeline.append((s, cursor, dur, img,
-                         (s.get("motion") or "lock").strip(), dialogue,
-                         vstart, min(vend, dur)))
-        cursor += dur
-    total = cursor + outro
+    timeline, total = plan_timeline(shots, voices, cfg, lambda s: find_image(args.images, s["shot_id"]))
+    missing = [tl[0]["shot_id"] for tl in timeline if not tl[3]]
     print("[时间轴] %.1fs（片头 %.1fs / 片尾 %.1fs），缺图 %d" %
           (total, intro, outro, len(missing)), flush=True)
     if missing:
         raise RuntimeError("缺少关键帧：" + ", ".join(missing))
 
-    subs = [(start + vstart, start + min(vend, dur), text)
-            for _s, start, dur, _img, _m, text, vstart, vend in timeline if text]
+    subs = timeline_cues(timeline, cfg["subtitle"])
     srt = os.path.join(out_dir, "subtitles.srt")
     write_srt(subs, srt)
     print("[字幕] %d 条 -> %s%s" %

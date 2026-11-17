@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import sys
 
-__version__ = '1.0.0'
+__version__ = '1.1.0'
 APP = Path(__file__).resolve().parent.parent
 GATE = APP / 'drama/build_gate.json'
 CERTIFICATE = APP / 'drama/BUILD_VERIFIED.json'
@@ -15,7 +15,7 @@ BUILD_FILES = [
     'drama/workflow_graph.py', 'drama/workflows/3d_full_api.json',
     'drama/workflows/animate2_transfer_api.json', 'drama/workflows/animate2_transfer_api.meta.json',
     'custom_nodes/drama_pipeline/pipeline_nodes.py',
-    'drama/workflow_contract.py', 'drama/workflow_build.py', 'drama/readiness.py', 'drama/production_config.json',
+    'drama/workflow_contract.py', 'drama/workflow_build.py', 'drama/readiness.py', 'drama/voice.py', 'drama/production_config.json',
     'custom_nodes/drama_pipeline/__init__.py',
     'custom_nodes/drama_pipeline/production_server.py',
     'custom_nodes/drama_pipeline/production_nodes.py',

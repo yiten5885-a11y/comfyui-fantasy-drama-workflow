@@ -124,7 +124,7 @@ class ReadinessTests(unittest.TestCase):
 class StoryboardTests(unittest.TestCase):
     def test_example_summary(self):
         summary = storyboard_summary(ROOT / 'examples', CONFIG)
-        self.assertEqual((summary['title'], summary['shot_count'], summary['duration_sec']), ('云海剑台演示', 2, 5.5))
+        self.assertEqual((summary['title'], summary['shot_count'], summary['duration_sec']), ('云海剑台演示', 3, 8.5))
         self.assertEqual(summary['warnings'], [])
 
     def test_warnings_name_the_shots(self):
@@ -165,7 +165,7 @@ class InstallTests(unittest.TestCase):
             self.assertEqual([p.read_text() for p in root.glob('drama/batch.py.bak-*')], ['# older release\n'])
             self.assertFalse(json.loads(gate.read_text())['inference_enabled'])
             installer.install(root, apply=True, reset_config=True)
-            self.assertEqual(json.loads(config.read_text())['version'], 2)
+            self.assertEqual(json.loads(config.read_text())["version"], 3)
             self.assertTrue(list(root.glob('drama/production_config.json.bak-*')))
 
     def test_refuses_a_folder_that_is_not_comfyui(self):
@@ -201,7 +201,7 @@ class ServerTests(unittest.TestCase):
         status, projects, build_state, ready, presets = self.call(run)
         self.assertEqual(status, 200)
         self.assertEqual(projects, {'projects': [], 'default_project': 'example-fantasy-story', 'example_available': True})
-        self.assertEqual((build_state['inference_allowed'], build_state['certificate_valid'], build_state['version']), (False, True, '1.0.0'))
+        self.assertEqual((build_state['inference_allowed'], build_state['certificate_valid'], build_state['version']), (False, True, '1.1.0'))
         self.assertFalse(ready['can_start']);self.assertIn('models', ready['blocking'])
         self.assertEqual(presets['presets']['production']['transfer']['width'], 480)
         self.assertEqual(presets['presets']['preview']['draft']['frames'], 17)
@@ -216,7 +216,7 @@ class ServerTests(unittest.TestCase):
             return first.status, again.status, await summary.json(), missing.status, traversal.status
         first, again, summary, missing, traversal = self.call(run)
         self.assertEqual((first, again, missing), (200, 200, 404));self.assertIn(traversal, (400, 404))
-        self.assertEqual(summary['shot_count'], 2)
+        self.assertEqual(summary['shot_count'], 3)
 
     def test_upload_validates_before_import(self):
         good = (ROOT / 'examples/storyboard.json').read_bytes()
@@ -232,7 +232,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual((rejected, wrong_name, accepted), (400, 400, 200))
         self.assertIn('无名氏', body['error']);self.assertEqual(projects, [])
         self.assertEqual(list((self.work / 'input/drama').iterdir()), [self.work / 'input/drama' / result['project']])
-        self.assertEqual(result['shot_count'], 2)
+        self.assertEqual(result['shot_count'], 3)
 
     def test_submission_stays_locked_while_the_gate_is_closed(self):
         async def run(client):

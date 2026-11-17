@@ -10,6 +10,9 @@ from pathlib import Path
 import shutil
 import sys
 
+try:from . import voice as voicekit
+except ImportError:import voice as voicekit  # run as a script from drama/
+
 PLACEHOLDER = 'YOUR_LOCAL_VISION_MODEL'
 Z_IMAGE = [('diffusion_models', 'z_image_turbo_bf16.safetensors'),
            ('text_encoders', 'qwen_3_4b.safetensors'), ('vae', 'ae.safetensors')]
@@ -37,7 +40,7 @@ def writable_parent(path):
 
 
 def checks(cfg, certificate, gate_open, projects, model_lists=None, platform=None, which=shutil.which,
-           find_spec=importlib.util.find_spec, reachable=None, node_types=None):
+           find_spec=importlib.util.find_spec, reachable=None, node_types=None, voice_status=None, voices_needed=()):
     """Return the checklist. ``certificate`` is ``(valid, reason)``.
 
     States: ``ok``; ``warn`` (works, with a caveat); ``fail`` (a production run
@@ -88,10 +91,20 @@ def checks(cfg, certificate, gate_open, projects, model_lists=None, platform=Non
     else:items.append(item('vision', '视觉质检服务', 'ok', '%s @ %s' % (vision['model'], vision['url'])))
 
     voice = cfg.get('voice', {})
+    status = voice_status or {'engine': voice.get('engine', 'say'), 'available': bool(which('say')), 'voices': None,
+                              'detail': 'macOS say' if which('say') else '找不到 say 命令（仅 macOS 自带）'}
     if not voice.get('enabled', True):items.append(item('voice', '配音引擎', 'warn', '配音已关闭，成片只有配乐和音效'))
-    elif which('say'):items.append(item('voice', '配音引擎', 'ok', 'macOS say 可用；所选中文语音包需已在系统设置中下载'))
-    else:items.append(item('voice', '配音引擎', 'fail', '找不到 say 命令，逐句配音阶段会失败',
-                           '在 macOS 上运行，或在画布节点「配音字幕与配乐」关闭 voice_enabled 后从画布提交'))
+    elif not status['available']:
+        items.append(item('voice', '配音引擎', 'fail', status['detail'] + '，逐句配音阶段会失败',
+                          '在 macOS 上使用 say；或把 voice.engine 设为 command 并在 voice.command 填写本机配音程序（见开放指南「配音」一节）'))
+    else:
+        installed = status.get('voices')
+        missing = [name for name in voices_needed if installed is not None and not voicekit.voice_installed(name, installed)]
+        if missing:
+            items.append(item('voice', '配音引擎', 'fail', '系统没有安装这些语音：' + '、'.join(missing),
+                              '在 系统设置 › 辅助功能 › 朗读内容 › 系统语音 › 管理语音 中下载；或在角色表 voice 字段改用已安装的语音'))
+        else:
+            items.append(item('voice', '配音引擎', 'ok', status['detail'] + ('；所需 %d 个语音均已安装' % len(voices_needed) if installed is not None and voices_needed else '')))
 
     font = cfg.get('subtitle', {}).get('font', '')
     present = bool(font) and Path(font).expanduser().is_file()

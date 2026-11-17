@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "_readme": "一键精品短剧的全部预置参数，正常情况下一项都不用改；改完下次运行立即生效。cinema 段供精品渲染器 render_cinema.py 使用，video 段是基础版 render_drama.py 的回退参数。",
+  "version": 3,
+  "_readme": "一键短剧的全部预置参数。改完后运行 python drama/workflow_build.py --certify 重签构建证书。所有键都有代码内默认值，旧版配置可以继续使用。",
   "renderer": "cinema",
   "llm": {
     "url": "http://127.0.0.1:18088/v1/chat/completions",
@@ -62,9 +62,16 @@
     "cover": true,
     "voice_map": {
       "_default": "Tingting (中文（中国大陆）)",
+      "_female": "Tingting (中文（中国大陆）)",
       "_male": "Reed (中文（中国大陆）)",
-      "_elder": "Grandpa (中文（中国大陆）)"
-    }
+      "_elder": "Grandpa (中文（中国大陆）)",
+      "_child": "Flo (中文（中国大陆）)"
+    },
+    "transition": "dip",
+    "sharpen": 0.6,
+    "max_clip_slowdown": 1.5,
+    "hold_push_in": 0.045,
+    "sfx_duck_under_voice": 0.7
   },
   "video": {
     "fps": 24,
@@ -107,11 +114,17 @@
   "voice": {
     "enabled": true,
     "engine": "say",
+    "command": [],
+    "command_ext": "wav",
     "name": "Tingting",
     "rate": 170,
     "gain": 1.0,
     "lead_in_sec": 0.2,
     "timeout_sec": 60,
+    "trim_silence": true,
+    "normalize": true,
+    "target_rms_db": -20,
+    "peak_db": -1.5,
     "per_character": {}
   },
   "music": {
@@ -122,9 +135,12 @@
     "duck_under_voice": 0.42,
     "fade_sec": 1.8,
     "builtin": {
-      "style": "ambient_pad_bass_arp",
-      "bar_sec": 4.0
-    }
+      "style": "guofeng",
+      "beat_sec": 0.55,
+      "seed": 8
+    },
+    "duck_attack_sec": 0.06,
+    "duck_release_sec": 0.45
   },
   "audio": {
     "sample_rate": 44100,
@@ -190,7 +206,9 @@
       "enabled": true,
       "url": "http://127.0.0.1:18088/v1/chat/completions",
       "model": "YOUR_LOCAL_VISION_MODEL",
-      "timeout_sec": 600
+      "timeout_sec": 600,
+      "video_frames": 5,
+      "video_reference": true
     }
   },
   "default_project": "example-fantasy-story"

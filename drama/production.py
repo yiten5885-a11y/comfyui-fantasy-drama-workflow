@@ -133,6 +133,26 @@ def wan_graph(prompt, negative, image, prefix, seed, cfg, end_image=None):
     }
 
 
+def review_frame_indices(total, count=5):
+    """视频复检取样位置：首尾必取，其余均匀分布；count 来自 quality.vision.video_frames。"""
+    count = max(2, min(int(count), total))
+    return sorted({round(k * (total - 1) / (count - 1)) for k in range(count)})
+
+
+def review_frames(job, shot_id, clip_path):
+    """把复检帧写成 JPG，返回 (帧路径列表, 关键帧参照或 None)。"""
+    vcfg = job.cfg['quality']['vision']
+    with av.open(str(clip_path)) as clip:
+        frames = [f.to_image() for f in clip.decode(video=0)]
+    paths = []
+    for index in review_frame_indices(len(frames), vcfg.get('video_frames', 5)):
+        path = job.folder / ('%s_review_%d.jpg' % (shot_id, index))
+        frames[index].save(path); paths.append(path)
+    keyframe = job.state.get('shots', {}).get(shot_id, {}).get('image', {}).get('path')
+    reference = keyframe if vcfg.get('video_reference', True) and keyframe and Path(keyframe).is_file() else None
+    return paths, reference
+
+
 class Hold(RuntimeError):
     pass
 
@@ -355,21 +375,27 @@ class Job:
                      transfer_attempt=attempt)
         self.save()
 
-    def vision(self, paths, expected, sequence=False):
+    def vision(self, paths, expected, sequence=False, reference=None):
         self.check_stop()
         cfg = self.cfg['quality']['vision']
         if not cfg['enabled']:
             return {'status': 'not_checked'}
-        order = '每个 FRAME 标签紧接其对应视频帧，按首帧、中间帧、尾帧排列；允许动作带来的正常姿态变化。动态修正提示词用英文完整描述连续动作，作为下一次生成的完整替换提示词；必须保留原始分镜要求的动作、方向、终态和道具关系，不得为了通过质检而降低或改换动作目标。' if sequence else '每个图像标签紧接其对应图片。REFERENCE 仅作角色外观参考；CANDIDATE 是本次唯一待检分镜。动作、道具和场景只检查 CANDIDATE，不得将参考图的姿态或背景当作待检图的问题。'
+        order = '每个 FRAME 标签紧接其对应视频帧，按时间顺序从首帧到尾帧排列；允许动作带来的正常姿态变化。动态修正提示词用英文完整描述连续动作，作为下一次生成的完整替换提示词；必须保留原始分镜要求的动作、方向、终态和道具关系，不得为了通过质检而降低或改换动作目标。' if sequence else '每个图像标签紧接其对应图片。REFERENCE 仅作角色外观参考；CANDIDATE 是本次唯一待检分镜。动作、道具和场景只检查 CANDIDATE，不得将参考图的姿态或背景当作待检图的问题。'
+        items = []
+        if sequence and reference:
+            order += '最前面的 REFERENCE 是已通过质检的关键帧，是角色外观基准：逐帧比对人物五官、发型、服装款式与主色、配饰和手持道具是否与 REFERENCE 为同一角色；中途出现换脸、换装、道具消失或画风突变，判为不通过。姿态和镜头角度的变化不算问题。'
+            items.append((reference, 'reference', 'REFERENCE（已通过质检的关键帧，角色外观基准）'))
+        for index, path in enumerate(paths):
+            if sequence:items.append((path, 'sequence_frame', 'FRAME %d/%d（按时间顺序的待检视频帧）' % (index + 1, len(paths))))
+            elif index == len(paths) - 1:items.append((path, 'candidate', 'CANDIDATE（本次唯一待检分镜）'))
+            else:items.append((path, 'reference', 'REFERENCE %d（只作角色外观参考）' % (index + 1)))
         content = [{'type': 'text', 'text': '你是国风动漫分镜质检员。只依据图片检查主体、服装、画风、明显肢体崩坏与文字水印。' + order + '原始角色设定与预期分镜：' + expected + '\n只返回 JSON：{"pass":true或false,"issues":[具体问题],"correction_prompt":"不通过时给出完整的正向修正画面或动作要求；通过时留空"}。只对明确的主体遗漏、画风类别错误、动作语义冲突、角色变装、严重形变、主体明显模糊或文字水印判为不通过。原始设定为3D时必须保留立体建模与材质，特效不能代替分镜要求的人物动作；景深造成的背景模糊不算主体失焦。服装只检查主要颜色类别和款式；青绿的明暗、黑与深蓝、腰带宽窄、衣褶、发根扎结轮廓的差异不属于换装。参考图辅助识别，约束以文字中的原始角色设定为准，不得从参考图自行增加新的服装要求。左右手以人物自身方向为准，不能按画面左右判断；背面遮挡或视角导致无法确认的细节不作为失败依据。correction_prompt 只写应当出现的正确主体、服装和动作，不要复述错误画面，不写“当前图片是……”等问题描述。'}]
         instruction = content.pop()
         receipt = []
-        for index, path in enumerate(paths):
+        for path, role, label in items:
             with Image.open(path) as im:
                 im.thumbnail((512, 512))
                 b = io.BytesIO(); im.convert('RGB').save(b, 'JPEG', quality=85)
-            role = 'sequence_frame' if sequence else 'candidate' if index == len(paths) - 1 else 'reference'
-            label = 'FRAME %d/%d（按时间顺序的待检视频帧）' % (index + 1, len(paths)) if sequence else 'CANDIDATE（本次唯一待检分镜）' if role == 'candidate' else 'REFERENCE %d（只作角色外观参考）' % (index + 1)
             content.append({'type': 'text', 'text': label})
             content.append({'type': 'image_url', 'image_url': {'url': 'data:image/jpeg;base64,' + base64.b64encode(b.getvalue()).decode()}})
             receipt.append({'role': role, 'label': label, 'path': str(Path(path).resolve()), 'sha256': sha(path), 'submitted_jpeg_sha256': hashlib.sha256(b.getvalue()).hexdigest()})
@@ -431,7 +457,7 @@ class Job:
                 action = shot.get('video_prompt') or shot['description']
                 if state.get('quality_issues'):
                     action = state.get('correction_prompt') or action
-                graph = wan_graph(action + '，' + self.style + '，人物动作连贯，衣袖和头发自然运动，保持首帧角色外观与服装，不要字幕水印', self.cfg['dynamic']['negative'], target.relative_to(APP / 'input').as_posix(), prefix, seed, self.cfg, end_image=end_image)
+                graph = wan_graph(batch.motion_prompt(action, shot, self.characters, self.style), self.cfg['dynamic']['negative'], target.relative_to(APP / 'input').as_posix(), prefix, seed, self.cfg, end_image=end_image)
             if self.template is not None:
                 if __package__:
                     from .workflow_graph import compile_stage
@@ -546,13 +572,8 @@ class Job:
                 st = self.state['shots'][shot['shot_id']]['video']
                 while st.get('vision', {}).get('pass') is not True:
                     self.save(phase='video_review', current_shot=shot['shot_id'])
-                    with av.open(st['path']) as clip:
-                        frames = [f.to_image() for f in clip.decode(video=0)]
-                    paths = []
-                    for index in sorted({0, len(frames) // 2, len(frames) - 1}):
-                        path = self.folder / ('%s_review_%d.jpg' % (shot['shot_id'], index))
-                        frames[index].save(path); paths.append(path)
-                    try:review = self.graph_stage('video_review', shot, st['attempts']) if self.template is not None else self.vision(paths, shot.get('video_prompt') or shot['description'], sequence=True)
+                    paths, reference = review_frames(self, shot['shot_id'], st['path'])
+                    try:review = self.graph_stage('video_review', shot, st['attempts']) if self.template is not None else self.vision(paths, shot.get('video_prompt') or shot['description'], sequence=True, reference=reference)
                     except (urllib.error.URLError, TimeoutError, ValueError, KeyError) as e:raise Hold('动态镜头视觉检查失败：' + str(e))
                     atomic_json(self.folder / ('%s_video_a%d_review.json' % (shot['shot_id'], st['attempts'])), review)
                     st['vision'] = review; self.save()

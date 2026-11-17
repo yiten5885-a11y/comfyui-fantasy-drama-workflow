@@ -1,11 +1,21 @@
 {
   "title": "云海剑台演示",
-  "logline": "少年剑修在浮空石台挥剑破阵。",
+  "logline": "少年剑修挥剑破阵，白衣师姐引他前往云海深处。",
   "global_style": "高品质3D国风玄幻动画电影，三维角色建模与PBR材质，电影级体积光，青金色能量粒子，竖屏电影构图，主体清晰完整入镜",
   "characters": {
     "少年剑修": {
       "anchor": "少年剑修，青年男性，黑色高束发，深青色金纹长袍，银色肩甲，手持银灰长剑；所有镜头保持同一面部、发型、服装与道具。",
-      "base_seed": 26001
+      "base_seed": 26001,
+      "gender": "male",
+      "voice": "Reed",
+      "voice_rate": 175
+    },
+    "白衣师姐": {
+      "anchor": "白衣师姐，年轻女性，乌黑长发半束，白色银纹广袖长裙，腰悬青玉佩；所有镜头保持同一面部、发型、服装与配饰。",
+      "base_seed": 26101,
+      "gender": "female",
+      "voice": "Tingting",
+      "voice_rate": 165
     }
   },
   "shots": [
@@ -24,7 +34,7 @@
       "motion": "lock",
       "lighting": "青金色轮廓光",
       "grade": "neutral",
-      "sfx": "wind"
+      "sfx": "wind|sword@1.4"
     },
     {
       "shot_id": "S02",
@@ -41,7 +51,26 @@
       "motion": "pull_out",
       "lighting": "蓝金色能量照明",
       "grade": "neutral",
-      "sfx": "impact"
+      "sfx": "impact",
+      "transition": "flash"
+    },
+    {
+      "shot_id": "S03",
+      "character": "白衣师姐",
+      "scene": "浮空石台边缘",
+      "camera": "中景",
+      "description": "白衣师姐踏云而来，轻落在石台边缘，广袖与长发随风飘动，回身伸手示意同行，身后云海翻涌，远处悬浮山峰隐约可见，人物全身完整入镜。",
+      "video_prompt": "High-end 3D Chinese fantasy animation. The same young woman in a white wide-sleeved robe lands softly on the edge of the stone platform, sleeves and long hair flowing, then turns and extends her hand in invitation. Clouds roll behind her. Preserve the same face, hairstyle, white robe and jade pendant.",
+      "dialogue": "阵眼已破，随我来，云海深处还有人在等我们。",
+      "speaker": "白衣师姐",
+      "duration_sec": 3,
+      "width": 736,
+      "height": 1312,
+      "motion": "push_in",
+      "lighting": "柔和月光与青色轮廓光",
+      "grade": "cool",
+      "sfx": "energy",
+      "transition": "dip"
     }
   ]
 }

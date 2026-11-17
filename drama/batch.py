@@ -156,6 +156,27 @@ def make_prompt(shot, characters, global_style):
     return "，".join(parts)
 
 
+def character_anchors(shot, characters):
+    names = [n.strip() for n in shot.get("character", "").split("|") if n.strip()]
+    return [characters[n]["anchor"] for n in names if (characters.get(n) or {}).get("anchor")]
+
+
+def motion_prompt(action, shot, characters, global_style):
+    """动作视频提示词：连续动作 + 角色外观锚点 + 全局风格 + 一致性约束。
+
+    之前只给 Wan 动作描述，角色五官、服装和道具全靠首帧维持，长动作里容易漂移；
+    这里把与首帧相同的外观锚点一并写进去，让文本条件也约束角色外观。
+    """
+    parts = [action.strip().rstrip("，,。. ")]
+    anchors = character_anchors(shot, characters)
+    if anchors:
+        parts.append("角色外观保持不变：" + "；".join(a.rstrip("，,。. ") for a in anchors))
+    if global_style:
+        parts.append(global_style)
+    parts.append("人物动作连贯，衣袖和头发自然运动，全程保持首帧的五官、发型、服装、配色与道具，不要字幕水印")
+    return "，".join(parts)
+
+
 def resolve_seed(shot, characters, index):
     """CSV 显式指定优先；否则取该角色 base_seed + 镜头序号，保证可复现。"""
     if shot.get("seed") not in ("", None):

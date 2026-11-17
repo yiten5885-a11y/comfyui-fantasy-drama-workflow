@@ -39,12 +39,8 @@ def image_tensor(path):
 
 
 def audio_config(cfg, settings):
-    cfg = copy.deepcopy(cfg)
-    cfg['voice'].update(enabled=settings['voice_enabled'], name=settings['voice_name'], rate=settings['voice_rate'])
-    cfg['voice']['per_character'] = {'_default': settings['voice_name']}
-    cfg['cinema']['voice_map']['_default'] = settings['voice_name']
-    cfg['subtitle']['burn_in'] = settings['subtitles'];cfg['music']['enabled'] = settings['music']
-    return cfg
+    from drama.workflow_contract import apply_audio_settings
+    return apply_audio_settings(copy.deepcopy(cfg), settings)
 
 
 class DramaShotPlan:
@@ -83,7 +79,7 @@ class DramaShotPlan:
             correction = state.get('correction_prompt') or (shot['description'] if kind == 'image' else action)
             if kind == 'image':prompt += '，修正后的画面要求：' + correction
             else:action = correction
-        action += '，' + global_style + '，人物动作连贯，保持首帧角色与服装'
+        action = module.batch.motion_prompt(action, shot, characters, global_style)
         seed = module.batch.resolve_seed(shot, characters, shot['_index']) + (attempt - 1) * 100003
         context = {'job_id': job_id, 'shot_id': shot['shot_id'], 'index': int(index), 'attempt': attempt, 'stage': stage}
         return prompt, action, shot['width'], shot['height'], seed, context
@@ -203,12 +199,9 @@ class DramaVideoReview:
         module = production();job = job_for(shot);row = job.shots[shot['index']]
         video = job.cfg['animation'] if job.animate2_template is not None else job.cfg['dynamic']
         qa = module.video_check(clip['path'], size=(video['width'], video['height']), expected_frames=video['frames'])
-        with av.open(clip['path']) as video:frames = [frame.to_image() for frame in video.decode(video=0)]
-        paths = []
-        for index in sorted({0, len(frames)//2, len(frames)-1}):
-            path = job.folder / ('%s_review_%d.jpg' % (shot['shot_id'], index));frames[index].save(path);paths.append(path)
+        paths, reference = module.review_frames(job, shot['shot_id'], clip['path'])
         job.cfg['quality']['vision']['enabled'] = quality['visual_review']
-        review = job.vision(paths, row.get('video_prompt') or row['description'], sequence=True)
+        review = job.vision(paths, row.get('video_prompt') or row['description'], sequence=True, reference=reference)
         return {**clip, 'qa': qa, 'review': review}, review
 
 
@@ -274,16 +267,12 @@ class DramaTimelineSubtitles:
     def build(self, episode, voices, audio, output):
         from drama import render_cinema as renderer
         phase(episode, 'subtitles');cfg = audio_config(episode['cfg'], audio);cfg['cinema'].update({k: output[k] for k in ['width', 'height', 'fps']});c = cfg['cinema'];fps = c['fps']
-        intro = float(c['intro_sec']);outro = float(c['outro_sec']);cursor = intro;timeline = []
-        for row, voice in zip(episode['shots'], voices['lines']):
-            lead = float(cfg['voice'].get('lead_in_sec', .2));voice_duration = voice[3]
-            duration = max(float(row['duration_sec']), float(c['min_shot_sec']), voice_duration + lead + float(c['voice_tail_sec']) if voice_duration else 0)
-            image = str(Path(episode['folder']) / 'keyframes' / (row['shot_id'] + '.png'))
-            start = lead + .12;end = min(voice_duration + lead + .45 if voice_duration else duration, duration)
-            timeline.append((row, cursor, duration, image, row.get('motion') or 'lock', row.get('dialogue', ''), start, end));cursor += duration
+        intro = float(c['intro_sec']);outro = float(c['outro_sec'])
+        keyframes = Path(episode['folder']) / 'keyframes'
+        timeline, total = renderer.plan_timeline(episode['shots'], voices['lines'], cfg, lambda row: str(keyframes / (row['shot_id'] + '.png')))
         path = Path(episode['folder']) / 'subtitles.srt'
-        renderer.write_srt([(at + start, at + end, text) for row, at, duration, image, motion, text, start, end in timeline if text], str(path))
-        return ({'timeline': timeline, 'total': cursor + outro, 'intro_frames': round(intro * fps), 'outro_frames': round(outro * fps),
+        renderer.write_srt(renderer.timeline_cues(timeline, cfg['subtitle']), str(path))
+        return ({'timeline': timeline, 'total': total, 'intro_frames': round(intro * fps), 'outro_frames': round(outro * fps),
                  'grade': episode['shots'][0].get('grade') or 'neutral', 'cfg': cfg, 'subtitles': str(path)},)
 
 
