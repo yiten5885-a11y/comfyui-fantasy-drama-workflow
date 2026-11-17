@@ -201,7 +201,7 @@ class ServerTests(unittest.TestCase):
         status, projects, build_state, ready, presets = self.call(run)
         self.assertEqual(status, 200)
         self.assertEqual(projects, {'projects': [], 'default_project': 'example-fantasy-story', 'example_available': True})
-        self.assertEqual((build_state['inference_allowed'], build_state['certificate_valid'], build_state['version']), (False, True, '1.0.0'))
+        self.assertEqual((build_state['inference_allowed'], build_state['certificate_valid'], build_state['version']), (False, True, '1.1.0'))
         self.assertFalse(ready['can_start']);self.assertIn('models', ready['blocking'])
         self.assertEqual(presets['presets']['production']['transfer']['width'], 480)
         self.assertEqual(presets['presets']['preview']['draft']['frames'], 17)

@@ -3,6 +3,9 @@
   "characters": {
     "少年剑修": {
       "anchor": "少年剑修，青年男性，黑色高束发，深青色金纹长袍，银色肩甲，手持银灰长剑；所有镜头保持同一面部、发型、服装与道具。",
+      "gender": "male",
+      "voice": "Reed",
+      "voice_rate": 175,
       "base_seed": 26001
     }
   }

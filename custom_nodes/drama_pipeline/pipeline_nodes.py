@@ -83,7 +83,10 @@ class DramaShotPlan:
             correction = state.get('correction_prompt') or (shot['description'] if kind == 'image' else action)
             if kind == 'image':prompt += '，修正后的画面要求：' + correction
             else:action = correction
-        action += '，' + global_style + '，人物动作连贯，保持首帧角色与服装'
+        char_name = shot.get('character', '').split('|')[0].strip()
+        anchor = (characters.get(char_name) or {}).get('anchor', '') if char_name else ''
+        anchor_phrase = ('，角色外观与道具：' + anchor) if anchor else ''
+        action += anchor_phrase + '，' + global_style + '，全程保持首帧的五官、发型、服装、配色与道具，人物动作连贯'
         seed = module.batch.resolve_seed(shot, characters, shot['_index']) + (attempt - 1) * 100003
         context = {'job_id': job_id, 'shot_id': shot['shot_id'], 'index': int(index), 'attempt': attempt, 'stage': stage}
         return prompt, action, shot['width'], shot['height'], seed, context
@@ -205,8 +208,23 @@ class DramaVideoReview:
         qa = module.video_check(clip['path'], size=(video['width'], video['height']), expected_frames=video['frames'])
         with av.open(clip['path']) as video:frames = [frame.to_image() for frame in video.decode(video=0)]
         paths = []
-        for index in sorted({0, len(frames)//2, len(frames)-1}):
-            path = job.folder / ('%s_review_%d.jpg' % (shot['shot_id'], index));frames[index].save(path);paths.append(path)
+        v_cfg = job.cfg.get('quality', {}).get('vision', {})
+        n_vframes = int(v_cfg.get('video_frames', 5))
+        use_ref = bool(v_cfg.get('video_reference', True))
+        if use_ref and shot.get('job_id'):
+            keyframe_state = job.state.get('shots', {}).get(shot['shot_id'], {}).get('image', {})
+            kf_path = Path(keyframe_state.get('path', ''))
+            if kf_path.is_file():
+                paths.append(kf_path)
+        if len(frames) > 0:
+            n_vframes = max(2, min(len(frames), n_vframes))
+            indices = [int(round(i * (len(frames) - 1) / max(1, n_vframes - 1))) for i in range(n_vframes)]
+            seen = set()
+            for index in indices:
+                if index not in seen:
+                    seen.add(index)
+                    path = job.folder / ('%s_review_%d.jpg' % (shot['shot_id'], index))
+                    frames[index].save(path); paths.append(path)
         job.cfg['quality']['vision']['enabled'] = quality['visual_review']
         review = job.vision(paths, row.get('video_prompt') or row['description'], sequence=True)
         return {**clip, 'qa': qa, 'review': review}, review

@@ -46,6 +46,10 @@
     "outro_sec": 0.35,
     "outro_text": "完",
     "transition_frames": 4,
+    "transition": "dip",
+    "sharpen": 0.6,
+    "max_clip_slowdown": 1.5,
+    "hold_push_in": 0.045,
     "min_shot_sec": 3.0,
     "voice_tail_sec": 0.5,
     "zoom": 0.11,
@@ -59,11 +63,14 @@
     "subtitle_fade_sec": 0.28,
     "sfx_enabled": true,
     "sfx_gain": 0.26,
+    "sfx_duck_under_voice": 0.7,
     "cover": true,
     "voice_map": {
-      "_default": "Tingting (中文（中国大陆）)",
+      "_default": "Reed (中文（中国大陆）)",
       "_male": "Reed (中文（中国大陆）)",
-      "_elder": "Grandpa (中文（中国大陆）)"
+      "_female": "Tingting (中文（中国大陆）)",
+      "_elder": "Grandpa (中文（中国大陆）)",
+      "_child": "Flo"
     }
   },
   "video": {
@@ -107,11 +114,17 @@
   "voice": {
     "enabled": true,
     "engine": "say",
-    "name": "Tingting",
+    "command": [],
+    "command_ext": "wav",
+    "name": "Reed",
     "rate": 170,
     "gain": 1.0,
     "lead_in_sec": 0.2,
     "timeout_sec": 60,
+    "trim_silence": true,
+    "normalize": true,
+    "target_rms_db": -20,
+    "peak_db": -1.5,
     "per_character": {}
   },
   "music": {
@@ -120,9 +133,11 @@
     "file": "",
     "gain": 0.1,
     "duck_under_voice": 0.42,
+    "duck_attack_sec": 0.06,
+    "duck_release_sec": 0.45,
     "fade_sec": 1.8,
     "builtin": {
-      "style": "ambient_pad_bass_arp",
+      "style": "guofeng",
       "bar_sec": 4.0
     }
   },
@@ -190,7 +205,9 @@
       "enabled": true,
       "url": "http://127.0.0.1:18088/v1/chat/completions",
       "model": "YOUR_LOCAL_VISION_MODEL",
-      "timeout_sec": 600
+      "timeout_sec": 600,
+      "video_frames": 5,
+      "video_reference": true
     }
   },
   "default_project": "example-fantasy-story"

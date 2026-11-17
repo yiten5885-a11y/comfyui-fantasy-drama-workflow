@@ -37,13 +37,15 @@ def writable_parent(path):
 
 
 def checks(cfg, certificate, gate_open, projects, model_lists=None, platform=None, which=shutil.which,
-           find_spec=importlib.util.find_spec, reachable=None, node_types=None):
+           find_spec=importlib.util.find_spec, reachable=None, node_types=None, project_voices=None,
+           is_voice_installed=None):
     """Return the checklist. ``certificate`` is ``(valid, reason)``.
 
     States: ``ok``; ``warn`` (works, with a caveat); ``fail`` (a production run
     is expected to stop at this point); ``off`` (the inference gate, closed by
     design until the operator opens it).
     """
+    from drama.workflow_contract import is_voice_installed as contract_is_voice_installed, resolve_speaker_voice, load_storyboard, load_characters
     platform = platform or sys.platform
     items = []
     valid, reason = certificate
@@ -88,10 +90,52 @@ def checks(cfg, certificate, gate_open, projects, model_lists=None, platform=Non
     else:items.append(item('vision', '视觉质检服务', 'ok', '%s @ %s' % (vision['model'], vision['url'])))
 
     voice = cfg.get('voice', {})
-    if not voice.get('enabled', True):items.append(item('voice', '配音引擎', 'warn', '配音已关闭，成片只有配乐和音效'))
-    elif which('say'):items.append(item('voice', '配音引擎', 'ok', 'macOS say 可用；所选中文语音包需已在系统设置中下载'))
-    else:items.append(item('voice', '配音引擎', 'fail', '找不到 say 命令，逐句配音阶段会失败',
-                           '在 macOS 上运行，或在画布节点「配音字幕与配乐」关闭 voice_enabled 后从画布提交'))
+    engine = voice.get('engine', 'say')
+    if not voice.get('enabled', True):
+        items.append(item('voice', '配音引擎', 'warn', '配音已关闭，成片只有配乐和音效'))
+    elif engine == 'command':
+        cmd = voice.get('command')
+        exe = cmd[0] if (isinstance(cmd, (list, tuple)) and cmd) else (str(cmd).split()[0] if cmd else '')
+        if exe and which(exe):
+            items.append(item('voice', '配音引擎', 'ok', '自定义配音程序 %s 可用' % exe))
+        else:
+            items.append(item('voice', '配音引擎', 'fail', '找不到配音程序：%s' % (exe or '未配置'),
+                              '安装该程序或修正 drama/production_config.json 中的 voice.command'))
+    elif not which('say'):
+        items.append(item('voice', '配音引擎', 'fail', '找不到 say 命令，逐句配音阶段会失败',
+                          '在 macOS 上运行，或在画布节点「配音字幕与配乐」关闭 voice_enabled 后从画布提交'))
+    else:
+        check_voice_fn = is_voice_installed or contract_is_voice_installed
+        used_voices = set(project_voices or [])
+        if project_voices is None and projects:
+            for p in projects:
+                p_dir = None
+                for cand in [Path(str(p)), Path('input/drama') / str(p)]:
+                    if cand.is_dir():
+                        p_dir = cand
+                        break
+                if p_dir:
+                    sb_path = p_dir / 'storyboard.json'
+                    char_path = p_dir / 'characters.json'
+                    if sb_path.is_file():
+                        try:
+                            shots = load_storyboard(sb_path)
+                            chars = load_characters(char_path) if char_path.is_file() else {}
+                            for shot in shots:
+                                spk = shot.get('speaker', '')
+                                if spk and spk != '旁白':
+                                    v, _, _ = resolve_speaker_voice(spk, chars, cfg)
+                                    if v: used_voices.add(v)
+                        except Exception:
+                            pass
+        missing_v = [v for v in sorted(used_voices) if not check_voice_fn(v)]
+        if missing_v:
+            items.append(item('voice', '配音引擎', 'fail',
+                              '系统没有安装这些语音：%s' % '、'.join(missing_v),
+                              '在 系统设置 › 辅助功能 › 朗读内容 › 系统语音 › 管理语音 中下载对应语音'))
+        else:
+            items.append(item('voice', '配音引擎', 'ok',
+                              'macOS say 可用；分镜所用语音均已就绪' if used_voices else 'macOS say 可用；所选中文语音包需已在系统设置中下载'))
 
     font = cfg.get('subtitle', {}).get('font', '')
     present = bool(font) and Path(font).expanduser().is_file()

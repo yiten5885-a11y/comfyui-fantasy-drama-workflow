@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import sys
 
-__version__ = '1.0.0'
+__version__ = '1.1.0'
 APP = Path(__file__).resolve().parent.parent
 GATE = APP / 'drama/build_gate.json'
 CERTIFICATE = APP / 'drama/BUILD_VERIFIED.json'

@@ -14,19 +14,34 @@ import psutil
 from aiohttp import web
 import folder_paths
 from server import PromptServer
-from drama.workflow_contract import VIDEO_PRESETS, configure, input_payloads, load_storyboard, storyboard_summary
+from drama.workflow_contract import (VIDEO_PRESETS, configure, input_payloads, load_storyboard,
+                                     load_characters, storyboard_summary, resolve_speaker_voice)
 from drama.workflow_build import __version__, require_inference, build_status, certificate_status
 from drama import readiness
+from drama.render_cinema import synth_voice_line, preview_episode_audio
 
 APP = Path(__file__).resolve().parents[2]
 INPUT = Path(folder_paths.get_input_directory()) / 'drama'
 JOBS = Path(folder_paths.get_output_directory()) / 'drama_jobs'
+PREVIEW_DIR = Path(folder_paths.get_output_directory()) / 'drama_preview'
 EXAMPLES = APP / 'examples'
 # A fresh ComfyUI has neither folder; create both so the first visit works.
 INPUT.mkdir(parents=True, exist_ok=True)
 JOBS.mkdir(parents=True, exist_ok=True)
+PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
 PROCESSES = {}
 BACKEND_ID = '%s-%s' % (os.getpid(), time.time_ns())
+
+
+def prune_preview_cache(max_files=80):
+    try:
+        files = sorted(PREVIEW_DIR.glob('*'), key=lambda p: p.stat().st_mtime)
+        if len(files) > max_files:
+            for f in files[:-max_files]:
+                try:
+                    if f.is_file(): f.unlink()
+                except OSError: pass
+    except Exception: pass
 
 
 def write_json(path, value):
@@ -159,6 +174,142 @@ async def project_summary(request):
         if name not in projects():return web.json_response({'error': '找不到分镜项目'}, status=404)
         return web.json_response(storyboard_summary(source, effective_config()))
     except (ValueError, KeyError, TypeError, AttributeError, OSError) as e:return web.json_response({'error': str(e)}, status=400)
+
+
+@routes.post('/api/drama/audition')
+@routes.get('/api/drama/audition')
+async def audition(request):
+    try:
+        if request.method == 'POST':
+            try: data = await request.json()
+            except Exception: data = {}
+        else:
+            data = dict(request.query)
+        speaker = data.get('speaker', '')
+        text = data.get('text', '') or '万象本无形，御剑荡幽冥。'
+        voice = data.get('voice', '')
+        rate = data.get('voice_rate') or data.get('rate')
+        cfg = effective_config()
+        if not voice and speaker:
+            project = data.get('project')
+            chars = {}
+            if project:
+                p_dir = contained(INPUT, project)
+                if (p_dir / 'characters.json').is_file():
+                    chars = load_characters(p_dir / 'characters.json')
+            v, r, _ = resolve_speaker_voice(speaker, chars, cfg)
+            voice = voice or v
+            rate = rate or r
+        voice = voice or cfg.get('voice', {}).get('per_character', {}).get('_default', 'Tingting')
+        try: rate = int(rate) if rate else 175
+        except (ValueError, TypeError): rate = 175
+        h = hashlib.md5(('%s_%s_%s' % (voice, rate, text)).encode('utf-8')).hexdigest()[:12]
+        out_wav = PREVIEW_DIR / ('audition_%s.wav' % h)
+        if not out_wav.is_file():
+            synth_voice_line(text, voice, rate, out_wav, cfg)
+        prune_preview_cache()
+        return web.json_response({
+            'ok': True,
+            'audio_url': '/api/drama/preview_media/%s' % out_wav.name,
+            'voice': voice,
+            'rate': rate,
+            'text': text
+        })
+    except Exception as e:
+        return web.json_response({'error': str(e)}, status=400)
+
+
+@routes.post('/api/drama/projects/{project}/preview_audio')
+@routes.get('/api/drama/projects/{project}/preview_audio')
+async def project_preview_audio(request):
+    try:
+        name = request.match_info['project']
+        source = contained(INPUT, name)
+        if name not in projects():return web.json_response({'error': '找不到分镜项目'}, status=404)
+        sb_file = source / 'storyboard.json'
+        if not sb_file.is_file():
+            sb_file = source / 'shots.csv'
+        shots = load_storyboard(sb_file)
+        char_file = source / 'characters.json'
+        characters = load_characters(char_file) if char_file.is_file() else {}
+        cfg = effective_config()
+        h = hashlib.md5(('%s_%s' % (name, sb_file.stat().st_mtime)).encode('utf-8')).hexdigest()[:10]
+        out_audio = PREVIEW_DIR / ('preview_%s_%s.wav' % (name, h))
+        out_srt = PREVIEW_DIR / ('preview_%s_%s.srt' % (name, h))
+        res = preview_episode_audio(shots, characters, cfg, out_audio, out_srt)
+        prune_preview_cache()
+        srt_content = out_srt.read_text(encoding='utf-8') if out_srt.is_file() else ''
+        return web.json_response({
+            'total_sec': res['total_sec'],
+            'audio_url': '/api/drama/preview_media/%s' % out_audio.name,
+            'srt_url': '/api/drama/preview_media/%s' % out_srt.name,
+            'srt_content': srt_content,
+            'timeline': res['timeline'],
+        })
+    except Exception as e:
+        return web.json_response({'error': str(e)}, status=400)
+
+
+@routes.get('/api/drama/preview_media/{filename}')
+async def serve_preview_media(request):
+    try:
+        filename = request.match_info['filename']
+        path = contained(PREVIEW_DIR, filename)
+        if not path.is_file():return web.Response(status=404, text='文件不存在')
+        return web.FileResponse(path)
+    except Exception as e:
+        return web.Response(status=400, text=str(e))
+
+
+@routes.get('/api/drama/jobs/{job_id}/media/{subpath:.*}')
+async def serve_job_media(request):
+    try:
+        folder = contained(JOBS, request.match_info['job_id'])
+        subpath = request.match_info['subpath']
+        target = (folder / subpath).resolve()
+        target.relative_to(folder.resolve())
+        if not target.is_file():return web.Response(status=404, text='文件不存在')
+        return web.FileResponse(target)
+    except Exception as e:
+        return web.Response(status=400, text=str(e))
+
+
+@routes.get('/api/drama/jobs/{job_id}/shots/{shot_id}/assets')
+async def shot_assets(request):
+    try:
+        folder = contained(JOBS, request.match_info['job_id'])
+        sid = request.match_info['shot_id']
+        state_path = folder / 'state.json'
+        if not state_path.is_file():return web.json_response({'error': '找不到任务'}, status=404)
+        state = json.loads(state_path.read_text())
+        shot_data = state.get('shots', {}).get(sid, {})
+        img_st = shot_data.get('image', {})
+        vid_st = shot_data.get('video', {})
+        tr_st = shot_data.get('video_transfer', {})
+        
+        def to_url(p):
+            if not p: return ''
+            p = Path(p)
+            if p.is_file():
+                try:
+                    rel = p.relative_to(folder)
+                    return '/api/drama/jobs/%s/media/%s' % (folder.name, rel.as_posix())
+                except ValueError:
+                    return '/view?filename=%s&subfolder=drama_jobs/%s&type=output' % (p.name, folder.name)
+            return ''
+
+        return web.json_response({
+            'shot_id': sid,
+            'keyframe_url': to_url(img_st.get('path')),
+            'draft_url': to_url(vid_st.get('driver_path') or (vid_st.get('path') if tr_st else '')),
+            'video_url': to_url(vid_st.get('path')),
+            'transfer_url': to_url(tr_st.get('path')),
+            'image_review': img_st.get('vision') or {},
+            'video_review': vid_st.get('vision') or {},
+            'quality_issues': (img_st.get('quality_issues') or []) + (vid_st.get('quality_issues') or []),
+        })
+    except Exception as e:
+        return web.json_response({'error': str(e)}, status=400)
 
 
 @routes.post('/api/drama/examples')

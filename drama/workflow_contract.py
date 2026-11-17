@@ -7,6 +7,130 @@ from pathlib import Path
 import re
 
 INPUT_FILES = ('storyboard.json', 'shots.csv', 'characters.json')
+KNOWN_SFX = {
+    'silence', 'rain', 'wind', 'waves', 'boat', 'steps', 'clock',
+    'engine', 'city', 'birds', 'paper', 'door', 'energy', 'fire',
+    'impact', 'sword', 'thunder'
+}
+KNOWN_GRADES = {'', 'neutral', 'cool', 'warm', 'golden', 'noir'}
+KNOWN_TRANSITIONS = {'', 'dip', 'dissolve', 'cut', 'flash'}
+KNOWN_MOTIONS = {
+    '', 'lock', 'static', 'zoom_in', 'zoom_out', 'pan_left', 'pan_right',
+    'pull_out', 'push_in', 'tilt_up', 'tilt_down'
+}
+ELDER_HINT = ('老', '爷', '婆', '祖', '长者')
+MALE_HINT = ('哥', '弟', '公', '男', '剑修', '少年', '青年', '郎', '道士', '僧')
+FEMALE_HINT = ('姐', '妹', '娘', '女', '仙子', '少女', '姑', '夫人', '姑娘', '姨')
+_INSTALLED_VOICES_CACHE = None
+
+
+def load_characters(path):
+    path = Path(path)
+    if not path.is_file(): return {}
+    try:
+        data = json.loads(path.read_text(encoding='utf-8-sig'))
+        chars = data.get('characters', data) if isinstance(data, dict) else {}
+        return chars if isinstance(chars, dict) else {}
+    except Exception:
+        return {}
+
+
+def get_installed_say_voices():
+    global _INSTALLED_VOICES_CACHE
+    if _INSTALLED_VOICES_CACHE is not None:
+        return _INSTALLED_VOICES_CACHE
+    import subprocess, shutil
+    voices = set()
+    if shutil.which('say'):
+        try:
+            res = subprocess.run(['say', '-v', '?'], capture_output=True, text=True, timeout=5)
+            for line in res.stdout.splitlines():
+                if line.strip():
+                    parts = line.split()
+                    if parts:
+                        voices.add(parts[0])
+                        # Also add full name if formatted like Reed (zh_CN)
+                        name_before_bracket = line.split('(')[0].strip()
+                        if name_before_bracket:
+                            voices.add(name_before_bracket)
+        except Exception:
+            pass
+    _INSTALLED_VOICES_CACHE = voices
+    return voices
+
+
+def is_voice_installed(voice, engine='say'):
+    if engine != 'say':
+        return True
+    installed = get_installed_say_voices()
+    if not installed:
+        # If say is not available or returned nothing, return False unless in test
+        return False
+    v = (voice or '').strip()
+    short = v.split('(')[0].strip()
+    return v in installed or short in installed
+
+
+def resolve_speaker_voice(speaker, cfg=None, characters=None):
+    if isinstance(cfg, dict) and ('voice' in cfg or 'cinema' in cfg or 'dynamic' in cfg):
+        config = cfg
+        chars = characters or {}
+    elif isinstance(characters, dict) and ('voice' in characters or 'cinema' in characters or 'dynamic' in characters):
+        config = characters
+        chars = cfg or {}
+    else:
+        config = cfg or {}
+        chars = characters or {}
+    name = (speaker or '').strip()
+    vcfg = config.get('voice', {})
+    cmap = config.get('cinema', {}).get('voice_map', {})
+    per_char = vcfg.get('per_character', {})
+    base_rate = int(vcfg.get('rate', 170))
+    info = chars.get(name, {}) if isinstance(chars, dict) else {}
+
+    # 1. 角色表里该角色的 voice 和 voice_rate
+    if info.get('voice'):
+        voice = info['voice']
+        rate = int(info.get('voice_rate') or base_rate)
+        return voice, rate, '角色表指定'
+
+    # 2. 配置文件 voice.per_character 里按角色名指定的声音
+    if name in per_char:
+        voice = per_char[name]
+        rate = int(info.get('voice_rate') or base_rate)
+        return voice, rate, '按角色名配置'
+
+    # 3. 角色表里的 gender: male, female, elder, child
+    gender = str(info.get('gender') or '').lower().strip()
+    if gender in ('male', 'female', 'elder', 'child'):
+        slot = f'_{gender}'
+        if slot in cmap:
+            voice = cmap[slot]
+            rate = int(info.get('voice_rate') or (base_rate * 0.88 if gender == 'elder' else base_rate))
+            return voice, rate, '按性别指定'
+
+    # 4. 按名字和外观描述推断
+    anchor = str(info.get('anchor') or '')
+    if any(k in name for k in ELDER_HINT) or any(k in anchor for k in ('长者', '老年', '50岁', '60岁', '白发苍苍')):
+        voice = cmap.get('_elder', 'Grandpa (中文（中国大陆）)')
+        rate = int(info.get('voice_rate') or (base_rate * 0.88))
+        reason = '按名字推断' if any(k in name for k in ELDER_HINT) else '按外观设定推断'
+        return voice, rate, reason
+    if any(k in name for k in FEMALE_HINT) or any(k in anchor for k in ('女性', '少女', '女子', '仙女', '师姐', '师妹')):
+        voice = cmap.get('_female', 'Tingting (中文（中国大陆）)')
+        rate = int(info.get('voice_rate') or base_rate)
+        reason = '按名字推断' if any(k in name for k in FEMALE_HINT) else '按外观设定推断'
+        return voice, rate, reason
+    if any(k in name for k in MALE_HINT) or any(k in anchor for k in ('男性', '少年', '青年', '剑修', '男子')):
+        voice = cmap.get('_male', 'Reed (中文（中国大陆）)')
+        rate = int(info.get('voice_rate') or base_rate)
+        reason = '按名字推断' if any(k in name for k in MALE_HINT) else '按外观设定推断'
+        return voice, rate, reason
+
+    # 5. _default
+    voice = cmap.get('_default') or vcfg.get('name', 'Reed (中文（中国大陆）)')
+    rate = int(info.get('voice_rate') or base_rate)
+    return voice, rate, '默认音色'
 VIDEO_PRESETS = {
     'preview': {'width': 384, 'height': 672, 'frames': 17, 'steps': 12, 'fps': 8},
     'production': {'width': 736, 'height': 1312, 'frames': 73, 'steps': 20, 'fps': 24},
@@ -86,7 +210,7 @@ def load_storyboard(folder, cfg):
         s['description'] = s.get('description') or s.get('prompt', '')
         if not isinstance(s['description'], str) or not s['description'].strip():
             raise ValueError(sid + ' 缺少有效 description / prompt')
-        for key in ['character', 'dialogue', 'speaker', 'video_prompt', 'camera', 'motion', 'lighting', 'grade', 'sfx', 'end_frame']:
+        for key in ['character', 'dialogue', 'speaker', 'video_prompt', 'camera', 'motion', 'lighting', 'grade', 'transition', 'sfx', 'end_frame']:
             s[key] = s.get(key, '')
             if not isinstance(s[key], str):raise ValueError(sid + '.' + key + ' 必须是字符串')
         if s['end_frame']:
@@ -157,15 +281,66 @@ def storyboard_summary(folder, cfg):
     loose = [s['shot_id'] for s in shots if not s['character'].strip()]
     if loose:warnings.append('未指定 character，角色外观锚点不会写入提示词：' + '、'.join(loose))
     if not characters:warnings.append('角色表为空，跨镜头一致性只能依赖画面描述')
+
+    # 检查未识别的音效、运镜、色调和转场名称
+    unrec_sfx = []
+    unrec_grade = []
+    unrec_trans = []
+    for s in shots:
+        sid = s['shot_id']
+        sfx_text = s.get('sfx', '').strip()
+        if sfx_text:
+            for part in sfx_text.split('|'):
+                base = part.split('@')[0].strip().lower()
+                if base and base not in KNOWN_SFX:
+                    unrec_sfx.append('%s(%s)' % (sid, base))
+        grade_text = s.get('grade', '').strip().lower()
+        if grade_text and grade_text not in KNOWN_GRADES:
+            unrec_grade.append('%s(%s)' % (sid, grade_text))
+        trans_text = s.get('transition', '').strip().lower()
+        if trans_text and trans_text not in KNOWN_TRANSITIONS:
+            unrec_trans.append('%s(%s)' % (sid, trans_text))
+    if unrec_sfx:
+        warnings.append('未识别的音效名称（将静音）：' + '、'.join(unrec_sfx))
+    if unrec_grade:
+        warnings.append('未识别的色调名称：' + '、'.join(unrec_grade))
+    if unrec_trans:
+        warnings.append('未识别的转场名称：' + '、'.join(unrec_trans))
+
+    # 配音表汇总
+    speaker_shots = {}
+    for s in shots:
+        text = (s.get('dialogue') or '').strip()
+        if text:
+            sp = (s.get('speaker') or '').strip()
+            speaker_shots.setdefault(sp, []).append(s)
+
+    engine = cfg.get('voice', {}).get('engine', 'say')
+    speakers = []
+    for sp, sp_shots in speaker_shots.items():
+        v, r, reason = resolve_speaker_voice(sp, cfg, characters)
+        installed = is_voice_installed(v, engine)
+        speakers.append({
+            'speaker': sp or '（默认）',
+            'voice': v,
+            'rate': r,
+            'reason': reason,
+            'dialogue_count': len(sp_shots),
+            'installed': installed,
+            'sample_text': (sp_shots[0].get('dialogue') or '').strip()
+        })
+
     return {
         'title': board.get('title') or Path(folder).name, 'logline': board.get('logline', ''), 'style': style,
         'source': 'storyboard.json' if 'storyboard.json' in files else 'shots.csv',
         'characters': list(characters), 'shot_count': len(shots),
         'duration_sec': round(sum(s['duration_sec'] for s in shots), 2),
         'dialogue_lines': sum(1 for s in shots if s['dialogue'].strip()),
+        'speakers': speakers,
         'warnings': warnings,
         'shots': [{'shot_id': s['shot_id'], 'character': s['character'], 'camera': s['camera'],
                    'duration_sec': s['duration_sec'], 'dialogue': s['dialogue'], 'speaker': s['speaker'],
                    'description': s['description'], 'has_video_prompt': bool(s['video_prompt'].strip()),
+                   'grade': s.get('grade', ''), 'transition': s.get('transition', ''), 'sfx': s.get('sfx', ''),
                    'end_frame': s['end_frame'], 'width': s['width'], 'height': s['height']} for s in shots],
     }

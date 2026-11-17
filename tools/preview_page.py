@@ -22,6 +22,12 @@ sys.path.insert(0, str(ROOT / 'tests'))
 import fake_comfy
 
 
+def demo_image(path):
+    from PIL import Image
+    im = Image.new('RGB', (270, 480), color=(30, 80, 70))
+    im.save(str(path))
+
+
 def demo_video(path):
     import av
     import numpy as np
@@ -58,6 +64,19 @@ def seed(work, server):
     ]
     for index, job in enumerate(jobs):
         folder = server.JOBS / job['job_id'];folder.mkdir(parents=True, exist_ok=True)
+        art_dir = folder / 'artifacts'; art_dir.mkdir(parents=True, exist_ok=True)
+        demo_image(art_dir / 'S01_image_a1.png')
+        demo_image(art_dir / 'S02_image_a1.png')
+        demo_video(art_dir / 'S01_video_a1.mp4')
+        demo_video(art_dir / 'S02_video_a1.mp4')
+        if 'video_transfer' in job['shots'].get('S01', {}):
+            demo_video(art_dir / 'S01_video_transfer_a1.mp4')
+            job['shots']['S01']['video_transfer']['path'] = str(art_dir / 'S01_video_transfer_a1.mp4')
+        job['shots']['S01']['image']['path'] = str(art_dir / 'S01_image_a1.png')
+        job['shots']['S01']['video']['path'] = str(art_dir / 'S01_video_a1.mp4')
+        job['shots']['S02']['image']['path'] = str(art_dir / 'S02_image_a1.png')
+        job['shots']['S02']['video']['path'] = str(art_dir / 'S02_video_a1.mp4')
+        job['shots']['S02']['video']['driver_path'] = str(art_dir / 'S02_video_a1.mp4')
         job.update(project='example-fantasy-story', title='云海剑台演示', shot_ids=['S01', 'S02'], created_at=now, updated_at=now)
         (folder / 'state.json').write_text(json.dumps(job, ensure_ascii=False))
         (folder / 'worker.log').write_text('RETRY S02 video 动态视频视觉复检未通过\nHold S02 / video 已达到重试上限，保留全部失败证据\n')
@@ -68,10 +87,16 @@ def main():
     ap = argparse.ArgumentParser(description='用演示数据预览制作页面')
     ap.add_argument('--port', type=int, default=8199)
     ap.add_argument('--ready', action='store_true', help='模拟全部就绪且门禁开启的状态')
+    ap.add_argument('--say', action='store_true', help='使用 macOS say 配音，默认使用提示音测试引擎')
     args = ap.parse_args()
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
         base = json.loads((ROOT / 'drama/production_config.json').read_text())
+        if not args.say:
+            base['voice']['engine'] = 'command'
+            base['voice']['command'] = [sys.executable, str(ROOT / 'tests/fake_tts.py'), '--voice', '{voice}',
+                                        '--out', '{out}', '--rate', '{rate}', '--text', '{text}']
+            base['voice']['command_ext'] = 'wav'
         models = {}
         if args.ready:
             from drama import readiness
@@ -83,7 +108,9 @@ def main():
             server.base_config = lambda: json.loads(json.dumps(base))
             server.build_status = lambda: (True, '工作流构建证书有效（预览模式：不会真的提交任务）')
             checks = server.readiness.checks
-            server.readiness.checks = lambda *a, **k: checks(*a, **{**k, 'platform': 'darwin', 'which': lambda name: '/usr/bin/say'})
+            server.readiness.checks = lambda *a, **k: checks(*a, **{**k, 'platform': 'darwin', 'which': lambda name: sys.executable if name == sys.executable else '/usr/bin/say'})
+        else:
+            server.base_config = lambda: json.loads(json.dumps(base))
         seed(work, server)
         app = fake_comfy.application(server)
 
