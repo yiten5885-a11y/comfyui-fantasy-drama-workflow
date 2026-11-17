@@ -14,13 +14,17 @@ import psutil
 from aiohttp import web
 import folder_paths
 from server import PromptServer
-from drama.workflow_contract import configure, input_payloads, load_storyboard
-from drama.workflow_build import require_inference, build_status
+from drama.workflow_contract import VIDEO_PRESETS, configure, input_payloads, load_storyboard, storyboard_summary
+from drama.workflow_build import __version__, require_inference, build_status, certificate_status
+from drama import readiness
 
 APP = Path(__file__).resolve().parents[2]
 INPUT = Path(folder_paths.get_input_directory()) / 'drama'
 JOBS = Path(folder_paths.get_output_directory()) / 'drama_jobs'
-JOBS.mkdir(exist_ok=True)
+EXAMPLES = APP / 'examples'
+# A fresh ComfyUI has neither folder; create both so the first visit works.
+INPUT.mkdir(parents=True, exist_ok=True)
+JOBS.mkdir(parents=True, exist_ok=True)
 PROCESSES = {}
 BACKEND_ID = '%s-%s' % (os.getpid(), time.time_ns())
 
@@ -37,6 +41,49 @@ def contained(root, name):
 
 def projects():
     return sorted(p.name for p in INPUT.iterdir() if p.is_dir() and ((p / 'storyboard.json').is_file() or (p / 'shots.csv').is_file()))
+
+
+def base_config():
+    return json.loads((APP / 'drama/production_config.json').read_text())
+
+
+def effective_config(preset='production'):
+    """The config a job submitted from the page would run with (canvas defaults applied)."""
+    from drama.workflow_graph import DEFAULT_API, capture, graph_settings
+    base = base_config()
+    try:
+        graph, _ = capture(json.loads(DEFAULT_API.read_text()))
+        settings = graph_settings(graph, base)
+        if preset == 'preview':settings['dynamic'].update(VIDEO_PRESETS['preview'])
+        return configure(base, preset, settings)
+    except (OSError, ValueError, KeyError):return configure(base, preset)
+
+
+def workflow_node_types():
+    """(node types the API graphs use, node types this ComfyUI registered); None outside ComfyUI."""
+    registry = getattr(sys.modules.get('nodes'), 'NODE_CLASS_MAPPINGS', None)
+    if registry is None:return None
+    from drama.workflow_graph import DEFAULT_API, ANIMATE2_API
+    try:wanted = {node['class_type'] for path in (DEFAULT_API, ANIMATE2_API) for node in json.loads(path.read_text()).values()}
+    except (OSError, ValueError, KeyError):return None
+    return wanted, set(registry)
+
+
+def service_reachable(url, timeout=0.6):
+    import socket
+    from urllib.parse import urlsplit
+    parts = urlsplit(url)
+    try:
+        with socket.create_connection((parts.hostname, parts.port or (443 if parts.scheme == 'https' else 80)), timeout=timeout):return True
+    except (OSError, TypeError, ValueError):return False
+
+
+def log_tail(path, lines=80, limit=64 * 1024):
+    if not path.is_file():return ''
+    with path.open('rb') as f:
+        f.seek(0, os.SEEK_END);size = f.tell();f.seek(max(0, size - limit))
+        text = f.read().decode('utf-8', 'replace')
+    return '\n'.join(text.splitlines()[-lines:])
 
 
 def launch(folder):
@@ -72,7 +119,7 @@ def submit(project, preset='preview', overrides=None, workflow=None):
     cfg = configure(base, preset, settings)
     if graph is not None:
         cfg['workflow'] = {'sha256': graph_sha, 'animate2_sha256': animate2_sha, 'source': 'expanded_canvas'}
-    load_storyboard(source, cfg)
+    board, shots, _, _ = load_storyboard(source, cfg)
     payloads = input_payloads(source)
     digest = hashlib.sha256(json.dumps(cfg, sort_keys=True).encode() + b''.join(name.encode() + payloads[name] for name in sorted(payloads))).hexdigest()
     job_id = digest[:20]; folder = contained(JOBS, job_id)
@@ -82,7 +129,8 @@ def submit(project, preset='preview', overrides=None, workflow=None):
         write_json(folder / 'config.json', cfg)
         if graph is not None:write_json(folder / 'workflow_api.json', graph)
         if cfg.get('animation', {}).get('enabled'):write_json(folder / 'animate2_workflow_api.json', animate2_graph)
-        write_json(folder / 'state.json', {'job_id': job_id, 'project': project, 'preset': preset, 'fingerprint': digest, 'status': 'queued', 'phase': 'queued', 'created_at': time.strftime('%Y-%m-%d %H:%M:%S'), 'shots': {}, 'error': ''})
+        write_json(folder / 'state.json', {'job_id': job_id, 'project': project, 'preset': preset, 'fingerprint': digest, 'status': 'queued', 'phase': 'queued', 'created_at': time.strftime('%Y-%m-%d %H:%M:%S'), 'shots': {}, 'error': '',
+                                           'title': board.get('title') or project, 'shot_ids': [shot['shot_id'] for shot in shots]})
     state = json.loads((folder / 'state.json').read_text())
     if state['status'] not in ('complete', 'needs_attention', 'stopped'):launch(folder)
     return {'job_id': job_id, 'status': state['status'], 'url': '/drama/production?job=' + job_id}
@@ -98,8 +146,57 @@ async def page(request):
 
 @routes.get('/api/drama/projects')
 async def list_projects(request):
-    cfg = json.loads((APP / 'drama/production_config.json').read_text())
-    return web.json_response({'projects': projects(), 'default_project': cfg.get('default_project')})
+    names = projects();default = base_config().get('default_project') or 'example-fantasy-story'
+    return web.json_response({'projects': names, 'default_project': default,
+                              'example_available': (EXAMPLES / 'storyboard.json').is_file() and default not in names})
+
+
+@routes.get('/api/drama/projects/{project}')
+async def project_summary(request):
+    """Validate a storyboard before any model runs, so mistakes surface at submission time."""
+    try:
+        name = request.match_info['project'];source = contained(INPUT, name)
+        if name not in projects():return web.json_response({'error': '找不到分镜项目'}, status=404)
+        return web.json_response(storyboard_summary(source, effective_config()))
+    except (ValueError, KeyError, TypeError, AttributeError, OSError) as e:return web.json_response({'error': str(e)}, status=400)
+
+
+@routes.post('/api/drama/examples')
+async def install_example(request):
+    try:
+        name = base_config().get('default_project') or 'example-fantasy-story';folder = contained(INPUT, name)
+        if name in projects():return web.json_response({'project': name})
+        if not (EXAMPLES / 'storyboard.json').is_file():return web.json_response({'error': '安装目录中没有 examples/，请手动上传分镜'}, status=404)
+        folder.mkdir(exist_ok=True)
+        for filename in ('storyboard.json', 'shots.csv', 'characters.json'):
+            if (EXAMPLES / filename).is_file():shutil.copy2(EXAMPLES / filename, folder / filename)
+        return web.json_response({'project': name})
+    except (ValueError, OSError) as e:return web.json_response({'error': str(e)}, status=400)
+
+
+@routes.get('/api/drama/presets')
+async def presets(request):
+    result = {}
+    for name in VIDEO_PRESETS:
+        cfg = effective_config(name);animation = cfg['animation']
+        result[name] = {'draft': {key: cfg['dynamic'][key] for key in ('width', 'height', 'frames', 'steps', 'fps')},
+                        'transfer': {key: animation[key] for key in ('width', 'height', 'frames', 'steps', 'fps')} if animation.get('enabled') else None,
+                        'delivery': {key: cfg['cinema'][key] for key in ('width', 'height', 'fps')}}
+    return web.json_response({'presets': result, 'max_retries': effective_config()['quality']['max_retries']})
+
+
+@routes.get('/api/drama/readiness')
+async def readiness_state(request):
+    cfg = effective_config()
+    kinds = sorted({kind for kind, _ in readiness.required_models(cfg)})
+    lists = {}
+    for kind in kinds:
+        try:lists[kind] = folder_paths.get_filename_list(kind)
+        except Exception:lists[kind] = []
+    reachable = await asyncio.get_running_loop().run_in_executor(None, service_reachable, cfg['quality']['vision']['url'])
+    result = readiness.checks(cfg, certificate_status(), build_status()[0], projects(), lists, reachable=lambda url: reachable,
+                              node_types=workflow_node_types())
+    return web.json_response({**result, 'version': __version__})
 
 
 @routes.get('/api/drama/runtime')
@@ -112,7 +209,8 @@ async def runtime(request):
 @routes.get('/api/drama/build')
 async def build_state(request):
     ready, reason = build_status()
-    return web.json_response({'inference_allowed': ready, 'reason': reason})
+    return web.json_response({'inference_allowed': ready, 'reason': reason, 'version': __version__,
+                              'certificate_valid': certificate_status()[0]})
 
 
 @routes.get('/api/drama/models')
@@ -134,6 +232,17 @@ async def get_job(request):
     try:
         folder = contained(JOBS, request.match_info['job_id'])
         return web.json_response(json.loads((folder / 'state.json').read_text()))
+    except (ValueError, OSError) as e:return web.json_response({'error': str(e)}, status=404)
+
+
+@routes.get('/api/drama/jobs/{job_id}/log')
+async def job_log(request):
+    try:
+        folder = contained(JOBS, request.match_info['job_id'])
+        if not (folder / 'state.json').is_file():raise ValueError('找不到任务')
+        lines = max(1, min(int(request.query.get('lines', 80)), 400))
+        return web.json_response({'job_id': folder.name, 'worker': log_tail(folder / 'worker.log', lines),
+                                  'compose': log_tail(folder / 'compose.log', lines)})
     except (ValueError, OSError) as e:return web.json_response({'error': str(e)}, status=404)
 
 
@@ -232,7 +341,12 @@ async def upload(request):
     name = 'upload-' + time.strftime('%Y%m%d-%H%M%S') + '-' + os.urandom(3).hex()
     folder = INPUT / name; folder.mkdir()
     for filename, content in files.items():(folder / filename).write_bytes(content)
-    return web.json_response({'project': name})
+    # Reject a storyboard that would only fail later inside a running job.
+    try:summary = storyboard_summary(folder, effective_config())
+    except (ValueError, KeyError, TypeError, AttributeError, UnicodeError) as e:
+        shutil.rmtree(folder, ignore_errors=True)
+        return web.json_response({'error': '分镜未通过校验，未导入：' + str(e)}, status=400)
+    return web.json_response({'project': name, 'title': summary['title'], 'shot_count': summary['shot_count'], 'warnings': summary['warnings']})
 
 
 class DramaRenderEpisode:

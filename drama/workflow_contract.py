@@ -143,3 +143,29 @@ def configure(base, preset='preview', overrides=None):
         cfg['subtitle']['burn_in'] = a['subtitles']
         cfg['music']['enabled'] = a['music']
     return cfg
+
+
+def storyboard_summary(folder, cfg):
+    """Validated, display-ready digest of a project; raises ValueError like load_storyboard."""
+    files = input_payloads(folder)
+    board, shots, characters, style = load_storyboard(folder, cfg)
+    warnings = []
+    plain = [s['shot_id'] for s in shots if not s['video_prompt'].strip()]
+    if plain:warnings.append('未填 video_prompt，动态镜头将沿用首帧描述：' + '、'.join(plain))
+    unvoiced = [s['shot_id'] for s in shots if s['dialogue'].strip() and not s['speaker'].strip()]
+    if unvoiced:warnings.append('有台词但未填 speaker，将使用默认配音：' + '、'.join(unvoiced))
+    loose = [s['shot_id'] for s in shots if not s['character'].strip()]
+    if loose:warnings.append('未指定 character，角色外观锚点不会写入提示词：' + '、'.join(loose))
+    if not characters:warnings.append('角色表为空，跨镜头一致性只能依赖画面描述')
+    return {
+        'title': board.get('title') or Path(folder).name, 'logline': board.get('logline', ''), 'style': style,
+        'source': 'storyboard.json' if 'storyboard.json' in files else 'shots.csv',
+        'characters': list(characters), 'shot_count': len(shots),
+        'duration_sec': round(sum(s['duration_sec'] for s in shots), 2),
+        'dialogue_lines': sum(1 for s in shots if s['dialogue'].strip()),
+        'warnings': warnings,
+        'shots': [{'shot_id': s['shot_id'], 'character': s['character'], 'camera': s['camera'],
+                   'duration_sec': s['duration_sec'], 'dialogue': s['dialogue'], 'speaker': s['speaker'],
+                   'description': s['description'], 'has_video_prompt': bool(s['video_prompt'].strip()),
+                   'end_frame': s['end_frame'], 'width': s['width'], 'height': s['height']} for s in shots],
+    }

@@ -1,0 +1,21 @@
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  release-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r custom_nodes/drama_pipeline/requirements.txt
+      # Model-free: unit tests, offline structure checks, build certificate, checksums, sanitisation.
+      - run: python tools/release_check.py

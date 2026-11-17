@@ -24,9 +24,9 @@ app.registerExtension({
       status.serialize = false;
       status.options.serialize = false;
       status.value = '正在读取工作流与制作状态。';
-      const labels = {queued:'排队中',running:'运行中',needs_attention:'需要处理',stopped:'已停止',complete:'已完成',preflight:'模型校验',image:'生成关键帧',image_review:'关键帧复检',video:'生成动态镜头',video_review:'动态视频复检',voice:'生成逐句配音',subtitles:'时间轴与字幕',audio:'混音',compose:'竖屏合成',final_review:'成片质检',publish:'复制交付成片'};
+      const labels = {queued:'排队中',running:'运行中',needs_attention:'需要处理',stopped:'已停止',complete:'已完成',preflight:'模型校验',image:'生成关键帧',image_review:'关键帧复检',video:'生成动作草稿',video_transfer:'Animate2 角色迁移',video_review:'动态视频复检',voice:'生成逐句配音',subtitles:'时间轴与字幕',audio:'混音',compose:'竖屏合成',final_review:'成片质检',publish:'复制交付成片'};
       const update = async () => {
-        if (!this.graph) return;
+        if (!this.graph || document.hidden) return;
         try {
           const responses = await Promise.all(['/drama/build', '/drama/jobs', '/drama/models'].map(path => api.fetchApi(path)));
           if (responses.some(r => !r.ok)) throw Error('读取制作状态失败');
@@ -36,7 +36,7 @@ app.registerExtension({
             status.value = '自动推理已锁定\n' + gate.reason;
             if (job) status.value += '\n历史任务：' + (labels[job.status] || job.status);
           } else {
-            status.value = job ? `${labels[job.status] || job.status} · ${labels[job.phase] || job.phase}\n${job.current_shot || ''}\n${job.error || ''}\n任务 ${job.job_id}` : '还未提交。检查设置后点击右上角运行。';
+            status.value = job ? [`${labels[job.status] || job.status} · ${labels[job.phase] || job.phase} ${job.current_shot || ''}`, job.error, '任务 ' + job.job_id].filter(Boolean).join('\n') : '还未提交。检查设置后点击右上角运行。';
           }
           if (models.status === 'verified') status.value += '\n视频模型文件：已校验，按任务加载';
           else if (models.total) status.value += `\n模型下载 ${(models.downloaded/1e9).toFixed(1)} / ${(models.total/1e9).toFixed(1)} GB`;
